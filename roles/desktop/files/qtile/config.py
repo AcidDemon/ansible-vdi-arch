@@ -370,7 +370,7 @@ screens = [
                     background="#1e1e2e",
                 ),
             ],
-            30,
+            34,
             border_color="#1e1e2e",
             border_width=[0, 0, 0, 0],
             margin=[15, 9, 6, 9],   # top, right, bottom, left; 9 = window gap, so the bar lines up with the windows
