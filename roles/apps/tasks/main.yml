@@ -1,0 +1,124 @@
+---
+- name: Collect every software switch set to true
+  ansible.builtin.set_fact:
+    wanted: >-
+      {{ software.values() | map('dict2items') | flatten
+         | selectattr('value', 'equalto', true) | map(attribute='key') | list }}
+    unwanted: >-
+      {{ software.values() | map('dict2items') | flatten
+         | selectattr('value', 'equalto', 'absent') | map(attribute='key') | list }}
+
+- name: Remove software switched to absent (with deps nothing else needs)
+  community.general.pacman:
+    name: "{{ unwanted }}"
+    state: absent
+    extra_args: --recursive
+  when: unwanted | length > 0
+
+- name: Software from the repos
+  community.general.pacman:
+    name: "{{ wanted | difference(upstream_binaries.keys() | list) }}"
+    update_cache: true
+  register: software_result
+
+- name: Packages installed by this run
+  ansible.builtin.debug:
+    msg: "{{ software_result.packages or 'nothing new' }}"
+
+- name: Download dir for upstream releases
+  ansible.builtin.file:
+    path: /var/cache/upstream
+    state: directory
+    mode: "0755"
+
+- name: Download upstream releases
+  ansible.builtin.get_url:
+    url: "{{ upstream_binaries[item].url }}"
+    dest: /var/cache/upstream/{{ upstream_binaries[item].url | basename }}
+    checksum: sha256:{{ upstream_binaries[item].sha256 }}
+    mode: "0644"
+  loop: "{{ wanted | intersect(upstream_binaries.keys() | list) }}"
+  register: upstream
+
+- name: Install upstream binaries into /usr/local/bin
+  ansible.builtin.unarchive:
+    src: "{{ item.dest }}"
+    dest: /usr/local/bin
+    remote_src: true
+    include: ["{{ item.item }}"]
+  loop: "{{ upstream.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Flathub remote
+  community.general.flatpak_remote:
+    name: flathub
+    flatpakrepo_url: https://dl.flathub.org/repo/flathub.flatpakrepo
+  when: software.tools.flatpak | default(false)
+
+- name: Flatpak apps (every app set to true in `flatpaks`)
+  community.general.flatpak:
+    name: "{{ flatpaks | dict2items | selectattr('value') | map(attribute='key') | list }}"
+    remote: flathub
+  when:
+    - software.tools.flatpak | default(false)
+    - flatpaks | dict2items | selectattr('value') | list | length > 0
+
+- name: Services (every unit set to true in `services`)
+  ansible.builtin.systemd_service:
+    name: "{{ item.key }}"
+    enabled: true
+    state: started
+  loop: "{{ services | dict2items | selectattr('value') | list }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Proxychains talks SOCKS5 to Tor (socks4 has no IPv6)
+  ansible.builtin.lineinfile:
+    path: /etc/proxychains.conf
+    regexp: '^socks4\s+127\.0\.0\.1\s+9050'
+    line: socks5 127.0.0.1 9050
+  when: software.network['proxychains-ng'] | default(false)
+
+- name: Read the menu entries of the apps that get a Tor variant
+  ansible.builtin.slurp:
+    src: /usr/share/applications/{{ item.key }}.desktop
+  loop: "{{ tor_launchers | dict2items | selectattr('value') | list }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: tor_src
+  failed_when: false   # app not installed: no Tor entry
+
+- name: Directory for local menu entries (Arch doesn't ship it)
+  ansible.builtin.file:
+    path: /usr/local/share/applications
+    state: directory
+    mode: "0755"
+
+# Copy of the app's entry: "(via Tor)" in the name, every Exec= routed through
+# Tor, no DBusActivatable/TryExec (they would bypass Exec).
+- name: '"(via Tor)" menu entries'
+  ansible.builtin.copy:
+    content: >-
+      {{ item.content | b64decode
+         | regex_replace('(?m)^Name=(.*)$', 'Name=\1 (via Tor)')
+         | regex_replace('(?m)^(Name\[.*|DBusActivatable=.*|TryExec=.*)\n', '')
+         | regex_replace('(?m)^Exec=(\S+)', exec_line) }}
+    dest: /usr/local/share/applications/{{ id }}-tor.desktop
+    mode: "0644"
+  loop: "{{ tor_src.results | selectattr('content', 'defined') | list }}"
+  loop_control:
+    label: "{{ id }}"
+  vars:
+    id: "{{ item.item.key }}"
+    exec_line: >-
+      {{ 'Exec=\1 --proxy-server=socks5://127.0.0.1:9050' if id in tor_launcher_chromium
+         else 'Exec=proxychains4 -q \1' }}
+
+- name: Remove "(via Tor)" entries switched off
+  ansible.builtin.file:
+    path: /usr/local/share/applications/{{ item.key }}-tor.desktop
+    state: absent
+  loop: "{{ tor_launchers | dict2items | rejectattr('value') | list }}"
+  loop_control:
+    label: "{{ item.key }}"

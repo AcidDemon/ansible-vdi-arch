@@ -1,0 +1,388 @@
+---
+# Wipes the target's disk and installs Arch from a RAM environment, then
+# unlocks over WireGuard and runs site.yml.
+#   ansible-playbook playbooks/install.yml -e wipe=true --ask-vault-pass
+# Already sitting in the installer after a failed run? Add -e install_user=root.
+# Rebuilding a box this repo installed? Its sshd is only on WireGuard, so add
+# -e install_user=<user> -e install_via=<wg.address IP>.
+
+- name: Boot the RAM installer
+  hosts: vdi
+  gather_facts: false
+  become: "{{ install_user != 'root' }}"
+  vars:
+    ansible_host: "{{ install_via | default(public_ip) }}"
+    ansible_user: "{{ install_user }}"
+    # Secrets cross the internet here, so pin the host key (the installer reuses it).
+    ansible_host_key_checking: true
+    ansible_ssh_extra_args: -o StrictHostKeyChecking=accept-new
+    kexec_tarball: "{{ playbook_dir }}/../.kexec-result/vdi-kexec-x86_64-linux.tar.gz"
+  tasks:
+    - name: Refuse to run without wipe=true
+      ansible.builtin.assert:
+        that: wipe | default(false) | bool
+        fail_msg: "This erases the disk of {{ inventory_hostname }}. Re-run with -e wipe=true."
+        quiet: true
+
+    - name: Check whether the installer is already running
+      ansible.builtin.raw: test -e /etc/NIXOS
+      register: in_installer
+      changed_when: false
+      failed_when: false
+      become: false
+
+    - name: Kexec into the installer
+      when: in_installer.rc != 0
+      block:
+        - name: Gather facts
+          ansible.builtin.setup:
+            gather_subset: [min, hardware]
+
+        - name: Read the kernel lockdown state
+          ansible.builtin.command: cat /sys/kernel/security/lockdown
+          register: lockdown
+          changed_when: false
+          failed_when: false
+
+        - name: Check RAM and Secure Boot
+          ansible.builtin.assert:
+            that:
+              - ansible_facts.memtotal_mb >= 1800
+              - lockdown.rc != 0 or '[none]' in lockdown.stdout
+            fail_msg: >-
+              Needs about 2 GB RAM and Secure Boot off: lockdown blocks kexec of the
+              installer, and the unsigned bootloader would not boot afterwards.
+
+        - name: Build the installer image on the controller
+          ansible.builtin.command: nix build {{ playbook_dir }}/../kexec -o {{ playbook_dir }}/../.kexec-result
+          delegate_to: localhost
+          become: false
+          run_once: true  # noqa: run-once[task]
+          changed_when: false
+
+        - name: Install cpio (the kexec script packs keys and network state with it)
+          ansible.builtin.package:
+            name: cpio
+
+        - name: Upload the installer image (about 500 MB)
+          ansible.builtin.copy:
+            src: "{{ kexec_tarball }}"
+            dest: /root/vdi-kexec.tar.gz
+            mode: "0600"
+
+        # run copies the authorized_keys of root and SUDO_USER, the SSH host keys and
+        # the live IP config (static or DHCP) into the installer, then kexecs after 6 s.
+        # Some 7.x host kernels reject kexec_file_load; then retry with kexec_load.
+        - name: Kexec
+          ansible.builtin.shell: |
+            set -e
+            cd /root
+            rm -rf kexec && tar -xzf vdi-kexec.tar.gz
+            if ! kexec/run; then
+              rm -rf kexec && tar -xzf vdi-kexec.tar.gz
+              kexec/run --kexec-extra-flags -c
+            fi
+          changed_when: true
+
+        - name: Wait for the old system to go down
+          ansible.builtin.wait_for:
+            host: "{{ public_ip }}"
+            port: 22
+            state: stopped
+            timeout: 120
+          delegate_to: localhost
+          become: false
+
+- name: Install Arch Linux
+  hosts: vdi
+  gather_facts: false
+  vars:
+    ansible_host: "{{ public_ip }}"
+    ansible_user: root
+    ansible_become: false
+    ansible_python_interpreter: /run/current-system/sw/bin/python3
+    ansible_host_key_checking: true
+    ansible_ssh_extra_args: -o StrictHostKeyChecking=accept-new
+    boot: /archboot                       # archlinux-bootstrap chroot, in RAM
+    sysroot: /archboot/mnt                # the target disk, mounted inside it
+    in_boot: bash /archboot/usr/bin/arch-chroot /archboot
+    in_chroot: bash /archboot/usr/bin/arch-chroot /archboot/mnt
+    cachyos_pkgs: cachyos-keyring cachyos-mirrorlist cachyos-v3-mirrorlist cachyos-v4-mirrorlist
+    use_cachyos: "{{ cachyos in ['generic', 'v3', 'v4', 'znver4'] }}"
+    cachyos_key: 882DCFE48E2051D48E2562ABF3B607488DB35A47   # full fingerprint, not the 64-bit ID
+  # NixOS's PATH has no /usr/bin and arch-chroot passes PATH through, so put the
+  # Arch locations first; the installer's own tools stay reachable behind them.
+  environment:
+    PATH: /usr/local/sbin:/usr/local/bin:/usr/bin:/run/wrappers/bin:/run/current-system/sw/bin
+  tasks:
+    - name: Wait for the installer
+      ansible.builtin.wait_for_connection:
+        delay: 10
+        timeout: 600
+
+    - name: Make sure this is the installer and not the old system
+      ansible.builtin.raw: test -e /etc/NIXOS
+      changed_when: false
+
+    - name: List disks
+      ansible.builtin.shell: set -o pipefail; lsblk -dnpo NAME,TYPE | awk '$2 == "disk" && $1 !~ /zram|loop/ {print $1}'
+      register: disks
+      changed_when: false
+
+    - name: Pick the target disk
+      ansible.builtin.assert:
+        that: install_disk | length > 0 or disks.stdout_lines | length == 1
+        fail_msg: "Several disks ({{ disks.stdout_lines | join(', ') }}): set install_disk."
+        quiet: true
+
+    - name: Remember the target disk
+      ansible.builtin.set_fact:
+        disk: "{{ install_disk or disks.stdout_lines[0] }}"
+
+    - name: Partition (BIOS boot, ESP as /boot, LUKS)
+      ansible.builtin.shell: |
+        set -eux
+        # leftovers of an earlier attempt; set -e stops here if something is still busy
+        if mountpoint -q {{ boot }}; then umount -R {{ boot }}; fi
+        [ ! -e /dev/mapper/cryptroot ] || cryptsetup close cryptroot
+        rm -rf --one-file-system {{ boot }}
+        # old LVM/swap on the disk may have been auto-activated in the installer
+        swapoff -a || true
+        vgchange -an || true
+        dmsetup remove_all || true
+        wipefs -af {{ disk }}
+        sgdisk --zap-all {{ disk }}
+        sgdisk -n1:0:+1M -t1:EF02 -c1:bios -n2:0:+1G -t2:EF00 -c2:ESP -n3:0:0 -t3:8309 -c3:cryptroot {{ disk }}
+        blockdev --rereadpt {{ disk }}
+        udevadm settle
+        mkfs.fat -F32 -n ESP /dev/disk/by-partlabel/ESP
+      changed_when: true
+
+    - name: Create the LUKS2 volume
+      ansible.builtin.command: >-
+        cryptsetup luksFormat --batch-mode {{ luks_format_args }}
+        --key-file=- /dev/disk/by-partlabel/cryptroot
+      args:
+        stdin: "{{ vault_luks_passphrase }}"
+        stdin_add_newline: false
+      no_log: true
+      changed_when: true
+
+    # --persistent stores the flags in the LUKS2 header, so the initrd needs no options.
+    - name: Open it with discards and without dm-crypt workqueues
+      ansible.builtin.command: >-
+        cryptsetup open --allow-discards --perf-no_read_workqueue --perf-no_write_workqueue
+        --persistent --key-file=- /dev/disk/by-partlabel/cryptroot cryptroot
+      args:
+        stdin: "{{ vault_luks_passphrase }}"
+        stdin_add_newline: false
+      no_log: true
+      changed_when: true
+
+    # argon2 memory and threads get capped by RAM and CPU count; show what stuck.
+    - name: Read back the LUKS header
+      ansible.builtin.shell: >-
+        set -o pipefail; cryptsetup luksDump /dev/disk/by-partlabel/cryptroot
+        | grep -E 'Flags|Cipher:|Hash|PBKDF|Memory|Threads|Time cost'
+      register: luksdump
+      changed_when: false
+
+    - name: Check the LUKS header
+      ansible.builtin.assert:
+        that:
+          - "'argon2id' in luksdump.stdout"
+          - "'allow-discards' in luksdump.stdout"
+          - "'no-read-workqueue' in luksdump.stdout"
+          - "'no-write-workqueue' in luksdump.stdout"
+        success_msg: "{{ luksdump.stdout_lines }}"
+
+    # The bootstrap carries archlinux-keyring, which every later package is checked
+    # against, so verify it with the release key from the repo, not the mirror.
+    - name: Download the Arch bootstrap tarball and its signature
+      ansible.builtin.get_url:
+        url: "{{ arch_mirror }}/iso/latest/archlinux-bootstrap-x86_64.tar.zst{{ item }}"
+        dest: /root/archlinux-bootstrap-x86_64.tar.zst{{ item }}
+        mode: "0600"
+      loop: ["", .sig]
+
+    - name: Upload the Arch release signing key (Pierre Schmitz, 3E80CA1A8B89F69CBA57D98A76A5EF9054449A5C)
+      ansible.builtin.copy:
+        src: arch-release-key.asc
+        dest: /root/arch-release-key.asc
+        mode: "0600"
+
+    - name: Verify the bootstrap signature
+      ansible.builtin.shell: |
+        set -e
+        gpg --dearmor < /root/arch-release-key.asc > /root/arch-release-key.gpg
+        gpgv --keyring /root/arch-release-key.gpg \
+          /root/archlinux-bootstrap-x86_64.tar.zst.sig /root/archlinux-bootstrap-x86_64.tar.zst
+      changed_when: false
+
+    - name: Unpack the bootstrap and mount the target into it
+      ansible.builtin.shell: |
+        set -eux
+        mkdir -p {{ boot }}
+        tar --zstd --numeric-owner -xf /root/archlinux-bootstrap-x86_64.tar.zst -C {{ boot }} --strip-components=1
+        mount --bind {{ boot }} {{ boot }}
+        mkfs.ext4 -q -L root /dev/mapper/cryptroot
+        mount -o noatime /dev/mapper/cryptroot {{ sysroot }}
+        mkdir {{ sysroot }}/boot
+        mount -o umask=0077 /dev/disk/by-partlabel/ESP {{ sysroot }}/boot
+        echo 'Server = {{ arch_mirror }}/$repo/os/$arch' > {{ boot }}/etc/pacman.d/mirrorlist
+        {{ in_boot }} pacman-key --init
+        {{ in_boot }} pacman-key --populate archlinux
+      changed_when: true
+
+    - name: Check that the CPU runs the CachyOS level
+      when: cachyos in ['v3', 'v4', 'znver4']
+      block:
+        - name: Ask the dynamic loader which x86-64 levels the CPU supports
+          ansible.builtin.command: "{{ boot }}/usr/lib/ld-linux-x86-64.so.2 --help"
+          register: isa
+          changed_when: false
+
+        - name: Refuse a CPU below the configured level
+          ansible.builtin.assert:
+            that: needed in isa.stdout
+            fail_msg: "CPU lacks {{ needed }}; set cachyos to generic or a lower level."
+            quiet: true
+          vars:
+            needed: x86-64-{{ 'v3' if cachyos == 'v3' else 'v4' }} (supported, searched)
+
+        - name: Refuse znver4 on anything but AMD Zen 4 or newer (AMD with AVX-512)
+          ansible.builtin.shell: grep -q AuthenticAMD /proc/cpuinfo && grep -qw avx512f /proc/cpuinfo
+          changed_when: false
+          when: cachyos == 'znver4'
+
+    # Stock pacman can't expand $arch_v3 in the CachyOS mirrorlists. A temporary
+    # [cachyos] entry with a literal server brings their pacman, which can.
+    - name: Give the bootstrap the CachyOS keyring, mirrorlists and pacman
+      ansible.builtin.shell: |
+        set -eux
+        {{ in_boot }} pacman-key --recv-keys {{ cachyos_key }} --keyserver hkps://keyserver.ubuntu.com
+        {{ in_boot }} pacman-key --lsign-key {{ cachyos_key }}
+        sed -i '/^\[core\]/i [cachyos]\nServer = https://mirror.cachyos.org/repo/$arch/$repo\n' \
+          {{ boot }}/etc/pacman.conf
+        {{ in_boot }} pacman -Sy --noconfirm {{ cachyos_pkgs }} pacman
+      when: use_cachyos
+      changed_when: true
+
+    - name: Final repo config (pacstrap -P copies it into the target)
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../roles/system/templates/pacman.conf.j2"
+        dest: "{{ boot }}/etc/pacman.conf"
+        mode: "0644"
+
+    - name: Pacstrap
+      ansible.builtin.command: >-
+        {{ in_boot }} pacstrap -P /mnt
+        base {{ kernels | join(' ') }} mkinitcpio cryptsetup grub dropbear nftables wireguard-tools
+        openssh sudo python zram-generator
+        {{ cachyos_pkgs if use_cachyos else '' }}
+      changed_when: true
+
+    - name: Write fstab
+      ansible.builtin.shell: "{{ in_boot }} genfstab -U /mnt > {{ sysroot }}/etc/fstab"
+      changed_when: true
+
+    - name: Basic system files
+      ansible.builtin.copy:
+        content: "{{ item.content }}"
+        dest: "{{ sysroot }}{{ item.dest }}"
+        mode: "{{ item.mode | default('0644') }}"
+      loop:
+        - {dest: /etc/hostname, content: "{{ hostname }}\n"}
+        - {dest: /etc/locale.gen, content: "{{ locale }} UTF-8\n"}
+        - {dest: /etc/locale.conf, content: "LANG={{ locale }}\n"}
+        - {dest: /etc/vconsole.conf, content: "KEYMAP={{ keymap }}\n"}
+        - {dest: /etc/systemd/zram-generator.conf, content: "[zram0]\nzram-size = ram / 2\n"}
+        - {dest: /etc/sudoers.d/wheel, content: "%wheel ALL=(ALL:ALL) ALL\n", mode: "0440"}
+      loop_control:
+        label: "{{ item.dest }}"
+
+    # The installer rebuilt the old system's addresses, routes and DHCP setup as
+    # MAC-matched 00-<if>.network units; keep those (not its own 99-* catch-alls),
+    # minus LLDP and mDNS.
+    - name: Keep the uplink config the installer restored
+      ansible.builtin.shell: |  # noqa: risky-shell-pipe (the | is regex alternation)
+        set -eu
+        for f in /etc/systemd/network/00-*.network; do
+          sed -E '/^[[:space:]]*(LLDP|MulticastDNS)[[:space:]]*=/d' "$f" \
+            > {{ sysroot }}/etc/systemd/network/"$(basename "$f")"
+        done
+      changed_when: true
+
+    - name: Configure inside the target
+      ansible.builtin.shell: |
+        set -eux
+        {{ in_chroot }} ln -sf /usr/share/zoneinfo/{{ timezone }} /etc/localtime
+        {{ in_chroot }} locale-gen
+        {{ in_chroot }} useradd -m -G wheel {{ user }}
+        {{ in_chroot }} systemctl enable systemd-networkd systemd-resolved systemd-timesyncd nftables sshd fstrim.timer
+      changed_when: true
+
+    - name: Set the user password
+      ansible.builtin.command: "{{ in_chroot }} chpasswd"
+      args:
+        stdin: "{{ user }}:{{ vault_user_password }}"
+      no_log: true
+      changed_when: true
+
+    - name: Create ~/.ssh for the user
+      ansible.builtin.file:
+        path: "{{ sysroot }}/home/{{ user }}/.ssh"
+        state: directory
+        mode: "0700"
+
+    - name: Authorized SSH keys for the user
+      ansible.builtin.copy:
+        content: "{{ ssh_authorized_keys | join('\n') }}\n"
+        dest: "{{ sysroot }}/home/{{ user }}/.ssh/authorized_keys"
+        mode: "0600"
+
+    - name: Hand ~/.ssh to the user
+      ansible.builtin.command: "{{ in_chroot }} chown -R {{ user }}: /home/{{ user }}/.ssh"
+      changed_when: true
+
+    - name: Firewall, WireGuard, sshd, initrd unlock, bootloader config
+      ansible.builtin.include_role:
+        name: system
+
+    - name: Install GRUB for BIOS and UEFI (removable path, no NVRAM entry needed)
+      ansible.builtin.shell: |
+        set -eux
+        {{ in_chroot }} grub-install --target=i386-pc {{ disk }}
+        {{ in_chroot }} grub-install --target=x86_64-efi --efi-directory=/boot --boot-directory=/boot \
+          --removable --no-nvram
+      changed_when: true
+
+    - name: Build the initramfs and grub.cfg
+      ansible.builtin.meta: flush_handlers
+
+    - name: Point resolv.conf at systemd-resolved
+      ansible.builtin.file:
+        src: ../run/systemd/resolve/stub-resolv.conf
+        dest: "{{ sysroot }}/etc/resolv.conf"
+        state: link
+        force: true
+
+    - name: Unmount
+      ansible.builtin.shell: |
+        set -eux
+        sync
+        umount -R {{ boot }}
+        cryptsetup close cryptroot
+      changed_when: true
+
+    - name: Reboot into Arch
+      ansible.builtin.shell: sleep 2 && reboot
+      async: 30   # must outlive the sleep, or async_wrapper kills it before reboot runs
+      poll: 0
+      changed_when: true
+
+- name: Unlock
+  ansible.builtin.import_playbook: unlock.yml
+
+- name: Configure
+  ansible.builtin.import_playbook: ../site.yml

@@ -1,0 +1,160 @@
+#!/bin/bash
+
+build() {
+    if ! pacman -Qi dropbear >/dev/null 2>&1; then
+        error "Package dropbear not installed"
+        return 1
+    fi
+
+    declare -F add_busybox >/dev/null || . /usr/lib/initcpio/functions.d/systemd-extras
+
+    add_busybox || return $?
+
+    local keydir="${SD_DROPBEAR_KEYDIR:-/etc/dropbear}"
+    local key_type host_key dropbear_opts convert_cmd
+    local -a load_credential_stmts
+    for key_type in ed25519 rsa ecdsa dss; do
+        host_key="dropbear_${key_type}_host_key"
+        if [[ -r "${keydir}/${host_key}.enc" ]]; then
+            load_credential_stmts+=( "LoadCredentialEncrypted=${host_key}" )
+            dropbear_opts+=" -r \${CREDENTIALS_DIRECTORY}/${host_key}"
+            add_file "${keydir}/${host_key}.enc" "/etc/credstore.encrypted/${host_key}"
+        fi
+    done
+    if [[ "${#load_credential_stmts[@]}" == "0" ]]; then
+        for key_type in ed25519 rsa ecdsa dss; do
+            host_key="dropbear_${key_type}_host_key"
+            if [[ -r "${keydir}/${host_key}" ]]; then
+                load_credential_stmts+=( "LoadCredential=${host_key}" )
+                dropbear_opts+=" -r \${CREDENTIALS_DIRECTORY}/${host_key}"
+                add_file "${keydir}/${host_key}" "/etc/credstore/${host_key}"
+            fi
+        done
+    fi
+    if [[ -z "$SD_DROPBEAR_KEYDIR" && "${#load_credential_stmts[@]}" == "0" ]]; then
+        for key_type in ed25519 rsa ecdsa; do
+            if [[ -r "/etc/ssh/ssh_host_${key_type}_key" ]]; then
+                host_key="dropbear_${key_type}_host_key"
+                mkdir -p "$BUILDROOT/etc/credstore"
+                convert_cmd=( dropbearconvert openssh dropbear )
+                convert_cmd+=( "/etc/ssh/ssh_host_${key_type}_key" )
+                convert_cmd+=( "$BUILDROOT/etc/credstore/${host_key}" )
+                if "${convert_cmd[@]}" 2>/dev/null; then
+                    load_credential_stmts+=( "LoadCredential=${host_key}" )
+                    dropbear_opts+=" -r \${CREDENTIALS_DIRECTORY}/${host_key}"
+                fi
+            fi
+        done
+        if [[ "${#load_credential_stmts[@]}" != "0" ]]; then
+            warning "Reusing the SSH host keys from the regular operating environment poses a security risk."
+            warning "See https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Dropbear-SSH-server for details."
+        fi
+    fi
+    if [[ "${#load_credential_stmts[@]}" == "0" ]]; then
+        error "Missing SSH host keys"
+        return 1
+    fi
+
+    add_binary dropbear
+
+    local socket_unit=(
+        "[Unit]"
+        "Description=Dropbear SSH server socket"
+        "Documentation=https://man.archlinux.org/man/dropbear.8"
+        "Requires=systemd-networkd.service"
+        "After=systemd-networkd.service"
+        "DefaultDependencies=no"
+        ""
+        "[Socket]"
+        "ListenStream=%i"
+        "Accept=true"
+        "KeepAlive=true"
+        "IPTOS=low-delay"
+        ""
+        "[Install]"
+        "WantedBy=sysinit.target"
+    )
+    printf "%s\n" "${socket_unit[@]}" > "$BUILDROOT/usr/lib/systemd/system/dropbear@.socket"
+
+    local service_unit=(
+        "[Unit]"
+        "Description=Dropbear SSH server (socket activated)"
+        "Documentation=https://man.archlinux.org/man/dropbear.8"
+        "DefaultDependencies=no"
+        "CollectMode=inactive-or-failed"
+        ""
+        "[Service]"
+        "Type=exec"
+        "StandardInput=socket"
+        "StandardOutput=socket"
+        "ExecStart=/usr/bin/dropbear ${SD_DROPBEAR_COMMAND:+-c '${SD_DROPBEAR_COMMAND}' }-i -s -m${dropbear_opts}"
+        "${load_credential_stmts[@]}"
+    )
+    printf "%s\n" "${service_unit[@]}" > "$BUILDROOT/usr/lib/systemd/system/dropbear@.service"
+
+    # silence error message about missing /var/log/lastlog
+    mkdir -p "$BUILDROOT/var/log"
+    touch "$BUILDROOT/var/log/lastlog"
+
+    # enable dropbear listening on TCP port $SD_DROPBEAR_PORT (if set to legal port number)
+    SD_DROPBEAR_PORT="${SD_DROPBEAR_PORT:-22}"
+    if (( SD_DROPBEAR_PORT < 1 || SD_DROPBEAR_PORT > 65535 )); then
+        error "Illegal value SD_DROPBEAR_PORT=$SD_DROPBEAR_PORT"
+        return 1
+    fi
+    add_symlink "/etc/systemd/system/sysinit.target.wants/dropbear@$SD_DROPBEAR_PORT.socket" /usr/lib/systemd/system/dropbear@.socket
+
+    SD_DROPBEAR_AUTHORIZED_KEYS="${SD_DROPBEAR_AUTHORIZED_KEYS:-/root/.ssh/authorized_keys}"
+    if [[ -r "$SD_DROPBEAR_AUTHORIZED_KEYS" ]]; then
+        add_file "$SD_DROPBEAR_AUTHORIZED_KEYS" /root/.ssh/authorized_keys 600
+        chmod 700 "$BUILDROOT/root/.ssh"
+    else
+        error "Keys file '$SD_DROPBEAR_AUTHORIZED_KEYS' does not exist (or not readable)"
+        return 1
+    fi
+}
+
+help() {
+    cat <<__EOF_HELP__
+This hook enables dropbear SSH server during initramfs phase.  It is only
+applicable for a systemd based intramfs phase, i.e. hook 'systemd' must be
+given in the HOOKS array in mkinitcpio.conf.
+
+See https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Dropbear-SSH-server
+for details.
+
+The hook copies all required files and binaries to the initramfs image and
+enables listening TCP port 22 (or some other).
+
+Host keys are copied from \$SD_DROPBEAR_KEYDIR (default /etc/dropbear). Host
+keys encrypted with systemd-creds (recognized by the suffix '.enc') are
+preferred. As a last resort the OpenSSH host keys in /etc/ssh are converted on
+the fly.
+
+By default dropbear presents the busybox shell after successful login. This
+behavior can be overruled in two ways:
+
+SD_DROPBEAR_COMMAND defines a shell command. The string is appended to 'sh -c',
+i.e. it may contain blanks, quotes and all kinds of special characters that are
+interpreted by the shell.  Example: To allow to unlock LUKS encrypted volumes
+from remote (but nothing else, especially no shell access) set:
+SD_DROPBEAR_COMMAND="systemd-tty-ask-password-agent"
+
+Use option 'command=...' for the entry in /root/.ssh/authorized_keys that
+contains the public key used to establish the SSH session. In the likely case
+that this option is only desired for the 'authorized_keys' in the initramfs you
+can set SD_DROPBEAR_AUTHORIZED_KEYS to specify a special version of this file
+to be copied into the initramfs.
+Example: To allow to unlock LUKS encrypted volumes from remote specify:
+command="systemd-tty-ask-password-agent" ....
+
+SD_DROPBEAR_COMMAND takes precedence.
+
+Set SD_DROPBEAR_PORT to specify a port other than 22.
+
+Set SD_DROPBEAR_AUTHORIZED_KEYS to specify a keys file other than
+/root/.ssh/authorized_keys.
+
+If required the above mentioned variables must be set in /etc/mkinitcpio.conf.
+__EOF_HELP__
+}

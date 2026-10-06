@@ -1,0 +1,254 @@
+---
+- name: Check the desktop choice
+  ansible.builtin.assert:
+    that: desktop in desktop_sessions and xrdp_desktop in desktop_sessions
+    fail_msg: "desktop and xrdp_desktop must be one of {{ desktop_sessions.keys() | list }}"
+    quiet: true
+
+- name: Desktop packages ({{ [desktop, xrdp_desktop] | unique | join(', ') }})
+  community.general.pacman:
+    name: >-
+      {{ desktop_packages + desktop_sessions[desktop].packages
+         + desktop_sessions[xrdp_desktop].packages }}
+    update_cache: true
+
+- name: WhiteSur download dir
+  ansible.builtin.file:
+    path: /var/cache/whitesur
+    state: directory
+    mode: "0755"
+
+# Versioned file names: a version bump downloads (and installs) again.
+- name: Download WhiteSur {{ whitesur_version }}
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: /var/cache/whitesur/{{ whitesur_version }}-{{ item.name }}
+    checksum: sha256:{{ item.sha256 }}
+    mode: "0644"
+  loop: "{{ whitesur_files }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: whitesur
+
+- name: Install the WhiteSur GTK themes system-wide (prebuilt upstream releases)
+  ansible.builtin.unarchive:
+    src: "{{ item.dest }}"
+    dest: /usr/share/themes
+    remote_src: true
+  loop: "{{ whitesur.results[:2] }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item is changed  # noqa: no-handler
+
+- name: Install the WhiteSur icons system-wide (upstream install.sh)
+  ansible.builtin.shell: |
+    set -e
+    d=$(mktemp -d)
+    tar -xzf {{ whitesur.results[2].dest }} -C "$d" --strip-components=1
+    "$d"/install.sh -d /usr/share/icons
+    rm -rf "$d"
+  when: whitesur.results[2] is changed  # noqa: no-handler
+  changed_when: true
+
+- name: Default MATE theme, icons and keyboard layout
+  when: "'mate' in [desktop, xrdp_desktop]"
+  ansible.builtin.copy:
+    content: |
+      [org.mate.interface]
+      gtk-theme='{{ mate_theme }}'
+      icon-theme='{{ mate_icons }}'
+
+      [org.mate.Marco.general]
+      theme='{{ mate_theme }}'
+
+      [org.mate.peripherals-keyboard-xkb.kbd]
+      layouts=['{{ x11_layout }}']
+      {% if software.desktop.flameshot | default(false) %}
+
+      # mate-screenshot hangs saving (glycin); Print / Alt+Print go to Flameshot
+      [org.mate.Marco.keybinding-commands]
+      command-screenshot='flameshot gui'
+      command-window-screenshot='flameshot gui'
+      {% endif %}
+    dest: /usr/share/glib-2.0/schemas/90_vdi.gschema.override
+    mode: "0644"
+  notify: Compile gschemas
+
+- name: Default KDE keyboard layout
+  when: "'kde' in [desktop, xrdp_desktop]"
+  ansible.builtin.copy:
+    content: |
+      [Layout]
+      LayoutList={{ x11_layout }}
+      Use=true
+    dest: /etc/xdg/kxkbrc
+    mode: "0644"
+
+- name: Qtile
+  when: "'qtile' in [desktop, xrdp_desktop]"
+  block:
+    - name: Qtile system config dir
+      ansible.builtin.file:
+        path: /etc/xdg/qtile
+        state: directory
+        mode: "0755"
+
+    - name: Qtile system default config (keys mirror niri on Ted)
+      ansible.builtin.copy:
+        src: qtile/config.py
+        dest: /etc/xdg/qtile/config.py
+        mode: "0644"
+
+    # qtile has no settings daemon and no XDG autostart: the wrapper sets the
+    # keyboard layout, loads xrdp's pipewire audio module in RDP sessions, and
+    # prefers the user's own config over the system one.
+    - name: Session wrapper for qtile
+      ansible.builtin.copy:
+        content: |
+          #!/bin/sh
+          # Managed by Ansible
+          setxkbmap {{ x11_layout }}
+          if [ -n "$XRDP_SESSION" ] && [ -x /usr/lib/pipewire-module-xrdp/load_pw_modules.sh ]; then
+            /usr/lib/pipewire-module-xrdp/load_pw_modules.sh &
+          fi
+          cfg="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/config.py"
+          [ -f "$cfg" ] || cfg=/etc/xdg/qtile/config.py
+          exec qtile start -b x11 -c "$cfg"
+        dest: /usr/local/bin/vdi-qtile-session
+        mode: "0755"
+
+# Flameshot 14 goes through the screenshot portal, which MATE doesn't have (it
+# times out after 30 s); this is its own switch for capturing via X11. In
+# /etc/xdg, so a user's own flameshot.ini still wins.
+- name: Flameshot captures through X11
+  when: software.desktop.flameshot | default(false)
+  block:
+    - name: Flameshot system config dir
+      ansible.builtin.file:
+        path: /etc/xdg/flameshot
+        state: directory
+        mode: "0755"
+
+    - name: Flameshot system config
+      ansible.builtin.copy:
+        content: |
+          [General]
+          useX11LegacyScreenshot=true
+        dest: /etc/xdg/flameshot/flameshot.ini
+        mode: "0644"
+
+# NoMachine starts the display at boot, before anyone logs in; linger gives the
+# user a systemd --user instance (session bus, pipewire) to attach to.
+- name: Start the user's systemd instance at boot
+  ansible.builtin.command: loginctl enable-linger {{ user }}
+  args:
+    creates: /var/lib/systemd/linger/{{ user }}
+
+- name: Checksum the NoMachine tarball on the controller
+  ansible.builtin.stat:
+    path: "{{ nomachine_tarball }}"
+    checksum_algorithm: sha256
+  delegate_to: localhost
+  become: false
+  register: nx_tarball
+
+- name: Refuse an unknown NoMachine tarball
+  ansible.builtin.assert:
+    that: nx_tarball.stat.exists and nx_tarball.stat.checksum == nomachine_sha256
+    fail_msg: "{{ nomachine_tarball }} is missing or does not match nomachine_sha256."
+    quiet: true
+
+- name: Upload NoMachine
+  ansible.builtin.copy:
+    src: "{{ nomachine_tarball }}"
+    dest: /root/nomachine.tar.gz
+    mode: "0600"
+  register: nx_upload
+
+- name: Check for an existing NoMachine install
+  ansible.builtin.stat:
+    path: /usr/NX/etc/server.cfg
+  register: nx_cfg
+
+# A new tarball (e.g. 9.6.3 -> Personal Edition 10.x) unpacks over /usr/NX and
+# runs --update. "fedora" is what the AUR package passes on Arch.
+- name: Install or update NoMachine
+  ansible.builtin.shell: |
+    set -e
+    tar -xzf /root/nomachine.tar.gz -C /usr
+    /usr/NX/nxserver --{{ 'update' if nx_cfg.stat.exists else 'install' }} fedora
+  when: nx_upload is changed or not nx_cfg.stat.exists
+  changed_when: true
+
+- name: PAM for NoMachine logins (installer default is 'include su')
+  ansible.builtin.copy:
+    content: |
+      auth     include system-remote-login
+      account  include system-remote-login
+      password include system-remote-login
+      session  include system-remote-login
+    dest: /etc/pam.d/nx
+    mode: "0644"
+  notify: Restart nxserver
+
+- name: NoMachine server.cfg
+  ansible.builtin.lineinfile:
+    path: /usr/NX/etc/server.cfg
+    regexp: '^\s*#?\s*{{ item.key }}\s'
+    line: "{{ item.key }} {{ item.value }}"
+  loop: "{{ nomachine_server_cfg | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  notify: Restart nxserver
+
+- name: NoMachine node.cfg
+  ansible.builtin.lineinfile:
+    path: /usr/NX/etc/node.cfg
+    regexp: '^\s*#?\s*{{ item.key }}\s'
+    line: "{{ item.key }} {{ item.value }}"
+  loop: "{{ nomachine_node_cfg | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  notify: Restart nxserver
+
+- name: NoMachine per-user config dir
+  ansible.builtin.file:
+    path: /home/{{ user }}/{{ item }}
+    state: directory
+    owner: "{{ user }}"
+    group: "{{ user }}"
+    mode: "0700"
+  loop: [.nx, .nx/config]
+
+- name: NoMachine key-based login
+  ansible.builtin.copy:
+    content: "{{ nomachine_authorized_keys | join('\n') }}\n"
+    dest: /home/{{ user }}/.nx/config/authorized.crt
+    owner: "{{ user }}"
+    group: "{{ user }}"
+    mode: "0600"
+
+- name: NoMachine licence (Personal Edition)
+  when: nomachine_license | length > 0
+  block:
+    - name: Upload the licence
+      ansible.builtin.copy:
+        content: "{{ nomachine_license }}"
+        dest: /root/server.lic
+        mode: "0600"
+      register: nx_lic
+      no_log: true
+
+    - name: Activate the licence
+      ansible.builtin.command: /etc/NX/nxserver --subscriptionset /root/server.lic
+      when: nx_lic is changed  # noqa: no-handler
+      changed_when: true
+
+- name: Apply config changes before checking
+  ansible.builtin.meta: flush_handlers
+
+- name: Query nxserver status
+  ansible.builtin.command: /etc/NX/nxserver --status
+  register: nxstatus
+  changed_when: false
+  failed_when: nxstatus.rc != 0

@@ -1,0 +1,28 @@
+---
+# Unlock after a (re)boot:  ansible-playbook playbooks/unlock.yml --ask-vault-pass
+# By hand:                  ssh -t -p 2222 root@<wg.initrd_address>
+#
+# The initrd answers on its own WireGuard address. Host keys aren't checked:
+# WireGuard already authenticated that end, and the dropbear key sits in the
+# same unencrypted initramfs as the initrd's WireGuard key, so it proves nothing more.
+- name: Unlock the disk over WireGuard
+  hosts: vdi
+  gather_facts: false
+  tasks:
+    - name: Send the passphrase to the initrd until the system answers
+      ansible.builtin.shell: |  # noqa: risky-shell-pipe (exit codes are ignored on purpose)
+        IFS= read -r pass
+        o="-o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+        o="$o {{ ansible_ssh_common_args | default('') }}"
+        for i in $(seq 1 60); do
+          ssh $o -o BatchMode=yes {{ user }}@{{ ansible_host }} true && exit 0
+          printf '%s\n' "$pass" \
+            | timeout 60 ssh -tt $o -p 2222 root@{{ wg.initrd_address | split('/') | first }} >/dev/null 2>&1
+          sleep 5
+        done
+        exit 1
+      args:
+        stdin: "{{ vault_luks_passphrase }}"
+      delegate_to: localhost
+      no_log: true
+      changed_when: true

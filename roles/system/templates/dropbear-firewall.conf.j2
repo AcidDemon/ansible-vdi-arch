@@ -1,0 +1,5 @@
+# Managed by Ansible. Only lands in the initramfs (FILES= in mkinitcpio.conf):
+# no unlock SSH unless the initrd ruleset loaded.
+[Unit]
+Requires=nftables.service
+After=nftables.service

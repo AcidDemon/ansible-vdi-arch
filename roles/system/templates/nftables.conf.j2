@@ -1,0 +1,33 @@
+#!/usr/sbin/nft -f
+# Managed by Ansible. From outside only WireGuard is reachable, and only from
+# allowed_cidrs; everything else is reachable only through wg0.
+flush ruleset
+
+table inet filter {
+  chain input {
+    type filter hook input priority filter; policy drop;
+    iif lo accept
+    ct state established,related accept
+    ct state invalid drop
+    # IPv6 needs neighbour discovery; errors for real flows come in as "related".
+    # (keywords, not names: the initrd has no /etc/protocols)
+    icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-advert, mld-listener-query } accept
+    ip6 saddr fe80::/10 udp dport 546 accept
+    iifname "wg0" meta l4proto { icmp, icmpv6 } accept
+{% set v6 = allowed_cidrs | select('search', ':') | list %}
+{% set v4 = allowed_cidrs | reject('search', ':') | list %}
+{% if v4 %}
+    ip saddr { {{ v4 | join(', ') }} } udp dport {{ wg.port }} accept
+    ip saddr { {{ v4 | join(', ') }} } icmp type echo-request accept
+{% endif %}
+{% if v6 %}
+    ip6 saddr { {{ v6 | join(', ') }} } udp dport {{ wg.port }} accept
+    ip6 saddr { {{ v6 | join(', ') }} } icmpv6 type echo-request accept
+{% endif %}
+    iifname "wg0" tcp dport { {{ wg_tcp_ports | join(', ') }} } accept
+  }
+
+  chain forward {
+    type filter hook forward priority filter; policy drop;
+  }
+}

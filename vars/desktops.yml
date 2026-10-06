@@ -1,0 +1,13 @@
+---
+# Sessions `desktop` (group_vars) can pick; used by the desktop and xrdp roles.
+# Both have to be X11: NoMachine's headless display and xorgxrdp are X11 only.
+desktop_sessions:
+  mate:
+    packages: [mate, mate-terminal]
+    command: /usr/bin/mate-session
+  kde:
+    packages: [plasma-desktop, plasma-x11-session, konsole, dolphin, spectacle]
+    command: /usr/bin/startplasma-x11
+  qtile:                           # tiling, keys mirror niri on Ted (roles/desktop/files/qtile)
+    packages: [qtile, kitty, thunar, rofi, rofi-emoji, rofi-calc, dunst, playerctl, i3lock, xorg-setxkbmap]
+    command: /usr/local/bin/vdi-qtile-session

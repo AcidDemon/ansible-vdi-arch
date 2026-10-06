@@ -1,0 +1,8 @@
+---
+- name: Compile gschemas
+  ansible.builtin.command: glib-compile-schemas /usr/share/glib-2.0/schemas
+  changed_when: true
+
+- name: Restart nxserver
+  ansible.builtin.command: /etc/NX/nxserver --restart
+  changed_when: true

@@ -1,0 +1,11 @@
+# Managed by Ansible
+GRUB_DEFAULT=0
+GRUB_TIMEOUT=3
+GRUB_DISTRIBUTOR="Arch"
+GRUB_CMDLINE_LINUX_DEFAULT=""
+# tries=0: never give up asking (systemd's default of 3 would need a console reset).
+GRUB_CMDLINE_LINUX="rd.luks.name={{ luks_uuid }}=cryptroot rd.luks.options=tries=0 root=/dev/mapper/cryptroot {{ kernel_console }}"
+GRUB_TOP_LEVEL="/boot/vmlinuz-{{ kernels[0] }}"
+GRUB_TERMINAL="console serial"
+GRUB_SERIAL_COMMAND="serial --speed=115200"
+GRUB_DISABLE_RECOVERY=true

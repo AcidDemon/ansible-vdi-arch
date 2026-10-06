@@ -1,0 +1,94 @@
+---
+# Throwaway VMs on the local Proxmox, cloned from the Debian 13 cloud template:
+#   vdi-test   stands in for the VPS (OVMF; -e bios=seabios for the BIOS path)
+#   wg-client  WireGuard peer; the controller reaches the tunnel through it
+#
+#   ansible-playbook -i inventory/test.yml tests/proxmox.yml -e @tests/secrets.yml
+#   ansible-playbook -i inventory/test.yml playbooks/install.yml -e @tests/secrets.yml -e wipe=true
+#   ansible-playbook -i inventory/test.yml tests/proxmox.yml -e destroy=true
+- name: Test VMs
+  hosts: proxmox_hosts
+  become: true
+  gather_facts: false
+  vars:
+    template: 9001
+    gateway: 10.0.30.1
+    nameserver: 10.0.40.53
+    vms:
+      - {vmid: 7790, name: vdi-test, ip: 10.0.30.190, memory: 4096, disk: 40G}
+      - {vmid: 7791, name: wg-client, ip: 10.0.30.191, memory: 1024, disk: 8G}
+  tasks:
+    - name: Destroy the test VMs
+      ansible.builtin.shell: qm stop {{ item.vmid }} --skiplock 1; qm destroy {{ item.vmid }} --purge
+      loop: "{{ vms }}"
+      when: destroy | default(false) | bool
+      changed_when: true
+      failed_when: false
+
+    - name: Clone, size and start the test VMs
+      ansible.builtin.shell: |
+        set -e
+        qm status {{ item.vmid }} >/dev/null 2>&1 && exit 0
+        qm clone {{ template }} {{ item.vmid }} --name {{ item.name }} --full
+        qm set {{ item.vmid }} --memory {{ item.memory }} --cores 2 --bios {{ bios | default('ovmf') }} \
+          --ipconfig0 ip={{ item.ip }}/24,gw={{ gateway }} --nameserver {{ nameserver }}
+        qm resize {{ item.vmid }} scsi0 {{ item.disk }}
+        qm start {{ item.vmid }}
+        echo created
+      loop: "{{ vms }}"
+      register: created
+      changed_when: "'created' in created.stdout"
+      when: not (destroy | default(false) | bool)
+
+- name: WireGuard peer for the controller
+  hosts: wg_clients
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Wait for the client VM
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+      when: not (destroy | default(false) | bool)
+
+    - name: Peer config
+      when: not (destroy | default(false) | bool)
+      block:
+        - name: Install wireguard-tools
+          ansible.builtin.apt:
+            name: wireguard-tools
+            update_cache: true
+
+        - name: Derive the VPS public keys (system, initrd)
+          ansible.builtin.command: wg pubkey
+          args:
+            stdin: "{{ item }}"
+          loop: ["{{ vault_wg_private_key }}", "{{ vault_wg_initrd_private_key }}"]
+          register: pub
+          changed_when: false
+          no_log: true
+
+        - name: WireGuard client config
+          ansible.builtin.copy:
+            content: |
+              [Interface]
+              PrivateKey = {{ wg_client_private_key }}
+              Address = {{ wg_client_address }}
+
+              [Peer]
+              PublicKey = {{ pub.results[0].stdout }}
+              AllowedIPs = {{ hostvars['vdi-test'].wg.address | split('/') | first }}/32
+              Endpoint = {{ hostvars['vdi-test'].public_ip }}:{{ hostvars['vdi-test'].wg.port }}
+
+              [Peer]
+              PublicKey = {{ pub.results[1].stdout }}
+              AllowedIPs = {{ hostvars['vdi-test'].wg.initrd_address | split('/') | first }}/32
+              Endpoint = {{ hostvars['vdi-test'].public_ip }}:{{ hostvars['vdi-test'].wg.port }}
+            dest: /etc/wireguard/wg0.conf
+            mode: "0600"
+          no_log: true
+
+        - name: Bring the tunnel up
+          ansible.builtin.systemd_service:
+            name: wg-quick@wg0
+            enabled: true
+            state: restarted

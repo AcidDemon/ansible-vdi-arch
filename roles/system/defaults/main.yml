@@ -1,0 +1,4 @@
+---
+# The installer points these at the mounted target; "" means the running system.
+sysroot: ""
+in_chroot: ""

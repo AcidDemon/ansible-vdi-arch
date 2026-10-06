@@ -1,0 +1,16 @@
+# Ansible vault (real secrets)
+inventory/group_vars/all/vault.yml
+# nix build output of ./kexec
+.kexec-result
+# NoMachine tarball and licence: proprietary, never commit
+files/nomachine*
+files/server.lic
+*.retry
+tests/secrets.yml
+files/nx-test-key*
+# local SSH keys
+deploy_key*
+id_*
+*.pem
+# editor/LSP tooling
+.serena/

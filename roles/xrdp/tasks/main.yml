@@ -1,0 +1,58 @@
+---
+- name: Build dependencies of the xrdp AUR packages
+  community.general.pacman:
+    name: "{{ xrdp_build_deps }}"
+
+- name: Unprivileged build user (makepkg refuses to run as root)
+  ansible.builtin.user:
+    name: aurbuild
+    system: true
+    home: /var/cache/aurbuild
+    create_home: true
+    shell: /usr/bin/nologin
+
+- name: Installed versions of the AUR packages
+  ansible.builtin.command: pacman -Q {{ item.name }}
+  loop: "{{ xrdp_aur }}"
+  register: aur_installed
+  changed_when: false
+  failed_when: false
+
+- name: Build and install what isn't at the pinned version
+  ansible.builtin.include_tasks: aur.yml
+  loop: "{{ xrdp_aur }}"
+  loop_control:
+    loop_var: pkg
+    index_var: i
+    label: "{{ pkg.name }}"
+  when: aur_installed.results[i].stdout != pkg.name ~ ' ' ~ pkg.version
+
+- name: Let Xorg start for non-console sessions (xrdp starts it per login)
+  ansible.builtin.copy:
+    content: "allowed_users=anybody\n"
+    dest: /etc/X11/Xwrapper.config
+    mode: "0644"
+
+- name: RDP session runs xrdp_desktop
+  ansible.builtin.copy:
+    content: |
+      #!/bin/sh
+      # Managed by Ansible
+      [ -r /etc/locale.conf ] && . /etc/locale.conf && export LANG
+      exec {{ desktop_sessions[xrdp_desktop].command }}
+    dest: /etc/xrdp/startwm.sh
+    mode: "0755"
+
+- name: No root logins over RDP
+  ansible.builtin.lineinfile:
+    path: /etc/xrdp/sesman.ini
+    regexp: '^AllowRootLogin='
+    line: AllowRootLogin=false
+  notify: Restart xrdp
+
+- name: Start xrdp
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop: [xrdp-sesman, xrdp]

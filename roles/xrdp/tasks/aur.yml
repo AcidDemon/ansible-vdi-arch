@@ -1,0 +1,40 @@
+---
+- name: "AUR repo at the pinned commit: {{ pkg.name }}"
+  ansible.builtin.git:
+    repo: https://aur.archlinux.org/{{ pkg.name }}.git
+    dest: /var/cache/aurbuild/{{ pkg.name }}
+    version: "{{ pkg.commit }}"
+    force: true
+  become: true
+  become_user: aurbuild
+
+- name: "Release signing key: {{ pkg.name }}"
+  ansible.builtin.command: gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys {{ pkg.pgp }}
+  become: true
+  become_user: aurbuild
+  when: pkg.pgp is defined
+  changed_when: true
+
+- name: "Build: {{ pkg.name }}"
+  ansible.builtin.command: >-
+    makepkg --force --cleanbuild --noconfirm
+    {{ '--nocheck' if pkg.nocheck | default(false) else '' }}
+  args:
+    chdir: /var/cache/aurbuild/{{ pkg.name }}
+  become: true
+  become_user: aurbuild
+  changed_when: true
+
+- name: "Package file: {{ pkg.name }}"
+  ansible.builtin.command: makepkg --packagelist
+  args:
+    chdir: /var/cache/aurbuild/{{ pkg.name }}
+  become: true
+  become_user: aurbuild
+  register: pkgfiles
+  changed_when: false
+
+- name: "Install: {{ pkg.name }}"
+  community.general.pacman:
+    name: "{{ pkgfiles.stdout_lines | reject('search', '-debug-') | list }}"
+  notify: Restart xrdp

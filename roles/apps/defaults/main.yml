@@ -1,0 +1,16 @@
+---
+# Chromium/Electron apps abort on start under proxychains (tested with chromium:
+# rc 134). They get Chromium's own proxy switch instead, which also resolves DNS
+# through Tor; everything else goes through proxychains.
+tor_launcher_chromium: [signal, vesktop, io.element.Element]
+
+# Tools without an Arch/CachyOS package. Switched on in `software` like the rest;
+# installed from pinned upstream releases (sha256 from the release's checksums
+# file) into /usr/local/bin. Bump url and sha256 together.
+upstream_binaries:
+  ffuf:
+    url: https://github.com/ffuf/ffuf/releases/download/v2.3.0/ffuf_2.3.0_linux_amd64.tar.gz
+    sha256: b2a3c725fcb9da175159682f54d6e9149f2905b00d84d155e7efc5d599975ceb
+  nuclei:
+    url: https://github.com/projectdiscovery/nuclei/releases/download/v3.11.1/nuclei_3.11.1_linux_amd64.zip
+    sha256: ea63d4ae232808cd7c6bc00d0142428e231fab59dae01042246097d195835ab6

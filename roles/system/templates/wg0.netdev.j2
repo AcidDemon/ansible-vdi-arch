@@ -1,0 +1,19 @@
+# Managed by Ansible
+[NetDev]
+Name=wg0
+Kind=wireguard
+
+[WireGuard]
+PrivateKey={{ wg_private_key }}
+ListenPort={{ wg.port }}
+{% for peer in wg.peers %}
+
+# {{ peer.name }}
+[WireGuardPeer]
+PublicKey={{ peer.public_key }}
+AllowedIPs={{ peer.allowed_ips | join(',') }}
+{%   if peer.endpoint is defined %}
+Endpoint={{ peer.endpoint }}
+PersistentKeepalive=25
+{%   endif %}
+{% endfor %}

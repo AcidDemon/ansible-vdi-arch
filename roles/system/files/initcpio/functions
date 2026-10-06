@@ -1,0 +1,69 @@
+# utility functions used by install hooks provided by package mkinitcpio-systemd-extras
+
+# make sure busybox (and thus sh) are present
+# might have been already installed by some other hook, e.g. base
+# other busybox applets are added also because they allocate nearly no space in initramfs
+add_busybox() {
+    if [[ ! -x "${BUILDROOT}/usr/bin/busybox" ]]; then
+        add_binary /usr/lib/initcpio/busybox /usr/bin/busybox
+        local applet
+        for applet in $(/usr/lib/initcpio/busybox --list); do
+            add_symlink "/usr/bin/$applet" busybox
+        done
+    fi
+}
+
+
+add_systemd_config_file() {
+    local config_file="$1" destination="${2:-$config_file}" mode="$3"
+
+    local real_config_file="$(realpath -- "${config_file}")"
+    if [[ -f "$real_config_file" ]]; then
+        mkdir -p "${BUILDROOT}${destination%/*}"
+        command cp --remove-destination --preserve=mode,ownership "$real_config_file" "${BUILDROOT}${destination}"
+        [[ -n "$mode" ]] && chmod "$mode" "${BUILDROOT}${destination}"
+    else
+        error "${config_file} is not a file or does not link to one or does not exist"
+        return 1
+    fi
+
+    # most (if not all) configuration files used by systemd and its many accompanying tools offer
+    # the usage of so-called drop-ins
+    local real_drop_in_dir="$(realpath -- "${config_file}.d")"
+    if [[ -d "$real_drop_in_dir" ]]; then
+        mkdir -p "${BUILDROOT}${destination}.d"
+        local drop_in real_drop_in
+        while read -d '' -r drop_in; do
+            real_drop_in="$(realpath -- "$drop_in")"
+            if [[ -f "$real_drop_in" ]]; then
+                local dst="${BUILDROOT}${destination}.d/${drop_in##*/}"
+                command cp --remove-destination --preserve=mode,ownership "$real_drop_in" "$dst"
+                [[ -n "$mode" ]] && chmod "$mode" "$dst"
+            fi
+        done < <(IFS= find "$real_drop_in_dir" -mindepth 1 -maxdepth 1 \( -type f -o -type l \) -name '*.conf' -print0)
+    fi
+}
+
+add_systemd_config_dir() {
+    local config_dir="$1" destination="${2:-$config_dir}" mode="$3"
+
+    local real_config_dir="$(realpath -- "${config_dir}")"
+    if [[ ! -d "$real_config_dir" ]]; then
+        error "${config_dir} is not a directory or does not link to one or does not exist"
+        return 1
+    fi
+
+    # argument $4 and following are glob patterns to exclude certain configuration files
+    shift; shift; shift
+    local exclude config_file
+    local find_cmd=( find "$real_config_dir" -mindepth 1 -maxdepth 1 "(" -type f -o -type l ")" )
+    for exclude in "$@"; do
+        find_cmd+=("!" "-name" "$exclude")
+    done
+    find_cmd+=("-print0")
+    while read -d '' -r config_file; do
+        if [[ -f "$(realpath -- "$config_file")" ]]; then
+            add_systemd_config_file "$config_file" "$destination/${config_file##*/}" "$mode" || return $?
+        fi
+    done < <(IFS= "${find_cmd[@]}")
+}

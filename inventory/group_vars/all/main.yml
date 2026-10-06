@@ -1,0 +1,211 @@
+---
+# ---------------------------------------------------------------------------
+# Exposure. The only public listener is the WireGuard port, and it accepts
+# packets only from these ranges (IPv4 and IPv6 mixed). sshd, NoMachine and the
+# initrd unlock SSH are reachable through the tunnel only.
+# ---------------------------------------------------------------------------
+allowed_cidrs:
+  - 198.51.100.0/24
+
+wg:
+  port: 51820
+  address: 10.66.0.1/24          # running system (key: vault_wg_private_key)
+  initrd_address: 10.66.0.2/24   # initrd unlock SSH (key: vault_wg_initrd_private_key)
+  peers:
+    - name: laptop
+      public_key: "REPLACE_WITH_CLIENT_PUBLIC_KEY="
+      allowed_ips: [10.66.0.10/32]
+
+# ---------------------------------------------------------------------------
+# System
+# ---------------------------------------------------------------------------
+hostname: vdi
+timezone: Europe/Berlin
+locale: en_US.UTF-8
+keymap: de-latin1                  # console / initrd
+x11_layout: de                     # desktop; NoMachine's display is US otherwise
+user: acid                         # desktop user, sudo via wheel + password
+ansible_user: "{{ user }}"
+ansible_python_interpreter: /usr/bin/python3   # Debian, Ubuntu and Arch; never let discovery carry over between OSes
+ssh_authorized_keys:               # sshd (user) and initrd unlock (root)
+  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKUv9dt68NkJ4wlTL56LzvZpjn4zcAWi57E8zFfA5W6c cardno:14_465_841
+ansible_become_password: "{{ vault_user_password }}"
+
+# "off" | generic | v3 | v4 | znver4. generic = CachyOS kernel and packages built
+# for plain x86_64; v3/v4/znver4 = whole userland rebuilt for that CPU level.
+# A VPS migrated to a host without that level will not boot (initrd included).
+# "off" = plain Arch (quote it, and drop linux-cachyos from kernels).
+cachyos: v3
+kernels: [linux-cachyos, linux-lts]   # first one boots by default, second is the fallback entry
+arch_mirror: https://geo.mirror.pkgbuild.com
+
+# Same parameters as the NixOS disko module (modules/storage/disk-config-lvm-thin.nix).
+luks_format_args: >-
+  --type luks2 --cipher aes-xts-plain64 --key-size 512 --hash sha512
+  --pbkdf argon2id --iter-time 3000
+install_disk: ""                   # empty = the only disk in the machine
+
+# The provider console is usually VGA; the last console= gets the prompt.
+kernel_console: console=ttyS0,115200 console=tty0
+
+# ---------------------------------------------------------------------------
+# Desktop / NoMachine
+# ---------------------------------------------------------------------------
+# Session NoMachine and xrdp start: mate | kde | qtile. All must run on X11. KDE's X11
+# session goes away with Plasma 6.8 (due mid-October 2026); once Arch ships that,
+# kde stops working here. Switching restarts NoMachine's display (open apps close).
+desktop: mate
+xrdp_desktop: "{{ desktop }}"      # what RDP sessions start; set it apart to compare desktops
+# NoMachine 10 has no free edition. Either the last free tarball (9.6.3, no more
+# security fixes) or Personal Edition 10.x plus nomachine_license.
+nomachine_tarball: "{{ inventory_dir }}/../files/nomachine_9.6.3_1_x86_64.tar.gz"
+nomachine_sha256: c2870b6fa6ee68d931ba7ca13f626dfdf06a04133a178a5a2aa6ff848c2cbaeb
+nomachine_license: "{{ vault_nomachine_license | default('') }}"   # server.lic contents (Personal Edition)
+# NoMachine wants a private key *file* on the client, so a smartcard SSH key won't do.
+# 9.6.3 only recognises RSA here (ssh-keygen -t rsa -b 4096 -m PEM); ed25519 gets
+# "Public key not recognized".
+nomachine_authorized_keys: "{{ ssh_authorized_keys }}"
+nomachine_geometry: 1920x1080
+
+# Second remote desktop, for comparison: RDP via xrdp + xorgxrdp (built here from
+# pinned AUR commits), TCP 3389 on wg0 only, login with the user's password.
+# Its own MATE session, separate from the NoMachine one.
+xrdp: true
+# WhiteSur-Light and -Dark (GTK + window borders) and the WhiteSur icons are
+# installed system-wide; these are the defaults until a user picks something else.
+mate_theme: WhiteSur-Light
+mate_icons: WhiteSur
+
+# ---------------------------------------------------------------------------
+# Software: true = installed by site.yml, false = left alone, absent = removed.
+# Categories are only headings. Keys are pacman package names; with CachyOS on,
+# its [cachyos] repo also carries some AUR favourites (vesktop-bin).
+# ---------------------------------------------------------------------------
+software:
+  browser:
+    firefox: true
+    chromium: absent
+    torbrowser-launcher: true      # Tor Browser; fetches and verifies it per user
+    librewolf: false
+    mullvad-browser-bin: true      # [cachyos]
+    zen-browser-bin: true          # [cachyos]
+    brave-bin: false               # [cachyos]
+  chat:
+    telegram-desktop: true
+    vesktop-bin: true              # Discord client (Vencord), from [cachyos]
+    signal-desktop: true
+    element-desktop: true         # Matrix
+    gajim: false                   # XMPP with OMEMO (Pidgin is AUR-only now)
+    dino: false                    # XMPP, simpler than Gajim
+  network:
+    proxychains-ng: true
+    tor: true                      # SOCKS on 127.0.0.1:9050 for proxychains (service below)
+    remmina: false                 # RDP/VNC/SSH client
+    filezilla: true
+    qbittorrent: false
+    syncthing: false
+    rclone: true
+    nextcloud-client: false
+    wireshark-qt: false
+    nmap: true
+  security:
+    keepassxc: true
+    bitwarden: false
+    veracrypt: true
+    bleachbit: true
+  desktop:                         # MATE apps the base `mate` group leaves out
+    atril: true                    # PDF/document viewer
+    pluma: true                   # text editor
+    engrampa: true                # archive manager
+    mate-calc: true
+    mate-system-monitor: true
+    mate-utils: true              # screenshots, file search, disk usage
+    mate-media: true              # volume control in the panel
+    flameshot: true                # screenshots with annotation; also takes over the Print key
+    copyq: true                    # clipboard history
+    gnome-keyring: true            # secret storage (MATE has no own one any more)
+    seahorse: true                 # GUI for gnome-keyring
+  fonts:
+    noto-fonts-emoji: true
+    ttf-liberation: true          # metric-compatible with Arial/Times, for office documents
+    noto-fonts-cjk: true          # Chinese/Japanese/Korean, ~300 MB
+  office:
+    libreoffice-fresh: true
+    onlyoffice-bin: false          # [cachyos]
+    hunspell-de: false
+    hunspell-en_us: false
+    thunderbird: true
+    obsidian: false
+    joplin-desktop: false          # [cachyos]
+    zim: false                     # desktop wiki
+    pdfarranger: false             # merge/split/reorder PDFs
+    xournalpp: false               # annotate PDFs, handwritten notes
+    drawio-desktop: false          # diagrams
+    foliate: false                 # ebook reader
+    calibre: false                 # ebook library
+  dev:
+    base-devel: false
+    git: true
+    neovim: false
+    code: false                    # Code - OSS
+    vscodium: false                # [cachyos]
+    meld: false
+    podman: false
+    go: false
+    rustup: false
+    nodejs: false
+    npm: false
+    uv: false
+    dbeaver: false                 # database GUI
+    docker: false                  # also needs services.docker and the docker group
+    kitty: false
+    tmux: false
+  pentest:                         # ffuf, nuclei: pinned upstream releases, see roles/apps/defaults
+    ffuf: true
+    nuclei: true
+    gobuster: true
+    john: true
+    hashcat: true                  # CPU only on a VPS...
+    pocl: true                     # ...through this OpenCL runtime
+    metasploit: true
+    zaproxy: false
+    sqlmap: false
+  media:
+    gimp: true                     # 3.2
+    imv: true                      # image viewer
+    mpv: true
+    vlc: true
+    inkscape: false
+    krita: false
+    pinta: false                   # simple paint program
+    audacity: false
+    shotcut: false                 # video editor
+    handbrake: false               # video converter
+    obs-studio: false              # no GPU: software encoding only
+  tools:
+    htop: true
+    btop: true
+    rsync: true
+    wget: true
+    unzip: true
+    7zip: true
+    flatpak: true                  # Flathub, for apps not in the repos (see flatpaks below)
+
+# Flathub apps, installed system-wide (needs software.tools.flatpak).
+# Key = Flathub app id; true = installed, false = left alone.
+flatpaks:
+  im.pidgin.Pidgin: false
+
+# systemd units site.yml enables and starts (true) or leaves alone (false).
+services:
+  tor: true
+
+# Extra menu entries "<App> (via Tor)": proxychains, or Chromium's own SOCKS
+# switch for Electron apps (see README). Key = the app's .desktop id;
+# true = entry present, false = removed.
+# Only takes effect if the app isn't already running (they are single-instance).
+tor_launchers:
+  signal: false                  # Signal's own network library bypasses the proxy switch (checked)
+  org.telegram.desktop: true
+  vesktop: true
+  io.element.Element: true

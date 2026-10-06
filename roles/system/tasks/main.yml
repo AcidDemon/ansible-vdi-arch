@@ -1,0 +1,153 @@
+---
+# Runs twice: from the installer against the mounted target (sysroot set), and
+# from site.yml against the running system. Everything here is plain config files.
+
+- name: Check the exposure settings
+  ansible.builtin.assert:
+    that:
+      - allowed_cidrs | length > 0
+      - wg.peers | length > 0
+      - vault_wg_private_key | length > 0
+      - vault_wg_initrd_private_key | length > 0
+    fail_msg: allowed_cidrs, wg.peers and both WireGuard private keys must be set.
+    quiet: true
+
+- name: Create config directories
+  ansible.builtin.file:
+    path: "{{ sysroot }}{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /etc/systemd/network-initrd
+    - /etc/systemd/system/dropbear@.socket.d
+    - /etc/dropbear
+    - /usr/lib/initcpio/functions.d
+    - /etc/systemd/resolved.conf.d
+
+- name: Pacman repositories
+  ansible.builtin.template:
+    src: pacman.conf.j2
+    dest: "{{ sysroot }}/etc/pacman.conf"
+    mode: "0644"
+
+- name: Firewall rulesets (running system, initrd)
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: "{{ sysroot }}/etc/{{ item.file }}"
+    mode: "0600"
+    validate: nft -c -f %s
+  loop:
+    - {file: nftables.conf, ports: "{{ [22, 4000] + ([3389] if xrdp | default(false) else []) }}"}  # sshd, NX, RDP
+    - {file: nftables-initrd.conf, ports: [2222]}   # dropbear
+  loop_control:
+    label: "{{ item.file }}"
+  vars:
+    wg_tcp_ports: "{{ item.ports }}"
+  notify: [Restart nftables, Rebuild initramfs]
+
+- name: WireGuard (running system and initrd get separate keys and addresses)
+  ansible.builtin.template:
+    src: "{{ item.0 }}.j2"
+    dest: "{{ sysroot }}/etc/systemd/{{ item.1 }}/{{ item.0 }}"
+    mode: "{{ '0640' if item.0 == 'wg0.netdev' else '0644' }}"
+  loop: "{{ ['wg0.netdev', 'wg0.network'] | product(['network', 'network-initrd']) | list }}"
+  vars:
+    wg_private_key: "{{ vault_wg_initrd_private_key if item.1 == 'network-initrd' else vault_wg_private_key }}"
+    wg_address: "{{ wg.initrd_address if item.1 == 'network-initrd' else wg.address }}"
+  no_log: true
+  notify: [Reload networkd, Rebuild initramfs]
+
+# networkd reads its config as systemd-network; the group name only resolves
+# inside the target, so chown there.
+- name: Let systemd-networkd read the WireGuard keys
+  ansible.builtin.command: >-
+    {{ in_chroot }} chown root:systemd-network
+    /etc/systemd/network/wg0.netdev /etc/systemd/network-initrd/wg0.netdev
+  changed_when: false
+
+# Arch's resolved answers mDNS (5353) and LLMNR (5355) on every link by default.
+- name: No mDNS/LLMNR responders
+  ansible.builtin.copy:
+    content: "[Resolve]\nMulticastDNS=no\nLLMNR=no\n"
+    dest: "{{ sysroot }}/etc/systemd/resolved.conf.d/10-vdi.conf"
+    mode: "0644"
+  notify: Restart resolved
+
+- name: Find the uplink network units
+  ansible.builtin.find:
+    paths: "{{ sysroot }}/etc/systemd/network"
+    patterns: "*.network"
+    excludes: wg0.network
+  register: uplink
+
+- name: Use the same uplink config in the initrd
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "{{ sysroot }}/etc/systemd/network-initrd/"
+    remote_src: true
+    mode: "0644"
+  loop: "{{ uplink.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  notify: Rebuild initramfs
+
+- name: SSH daemon settings
+  ansible.builtin.template:
+    src: sshd.conf.j2
+    dest: "{{ sysroot }}/etc/ssh/sshd_config.d/10-vdi.conf"
+    mode: "0644"
+    validate: sshd -t -f %s
+  notify: Reload sshd
+
+- name: Initrd hooks (mkinitcpio-systemd-extras v0.10.3, vendored)
+  ansible.builtin.copy:
+    src: initcpio/{{ item }}
+    dest: "{{ sysroot }}/usr/lib/initcpio/install/{{ item }}"
+    mode: "0644"
+  loop: [sd-network, sd-nftables, sd-dropbear]
+  notify: Rebuild initramfs
+
+- name: Initrd hook helper functions
+  ansible.builtin.copy:
+    src: initcpio/functions
+    dest: "{{ sysroot }}/usr/lib/initcpio/functions.d/systemd-extras"
+    mode: "0644"
+  notify: Rebuild initramfs
+
+- name: Initrd config
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ sysroot }}{{ item.dest }}"
+    mode: "0644"
+  loop:
+    - {src: mkinitcpio.conf.j2, dest: /etc/mkinitcpio.conf}
+    - {src: dropbear-firewall.conf.j2, dest: /etc/systemd/system/dropbear@.socket.d/10-firewall.conf}
+  notify: Rebuild initramfs
+
+- name: Initrd unlock keys
+  ansible.builtin.copy:
+    content: "{{ ssh_authorized_keys | join('\n') }}\n"
+    dest: "{{ sysroot }}/etc/dropbear/initrd_authorized_keys"
+    mode: "0600"
+  notify: Rebuild initramfs
+
+# Dedicated key: /boot is unencrypted, so never reuse the sshd host keys here.
+- name: Initrd SSH host key
+  ansible.builtin.command: "{{ in_chroot }} dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key"
+  args:
+    creates: "{{ sysroot }}/etc/dropbear/dropbear_ed25519_host_key"
+  notify: Rebuild initramfs
+
+- name: Read the LUKS UUID
+  ansible.builtin.command: cryptsetup luksUUID /dev/disk/by-partlabel/cryptroot
+  register: luks
+  changed_when: false
+
+- name: Bootloader config
+  ansible.builtin.template:
+    src: grub.j2
+    dest: "{{ sysroot }}/etc/default/grub"
+    mode: "0644"
+  vars:
+    luks_uuid: "{{ luks.stdout }}"
+  notify: Update grub

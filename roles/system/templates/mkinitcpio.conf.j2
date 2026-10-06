@@ -1,0 +1,16 @@
+# Managed by Ansible. systemd initramfs with remote unlock:
+# networkd (uplink + WireGuard) -> nftables -> dropbear on wg0:2222 -> sd-encrypt.
+# sd-network/sd-nftables/sd-dropbear are vendored from mkinitcpio-systemd-extras v0.10.3.
+
+# NIC/disk drivers listed explicitly: autodetect only sees today's hardware, and
+# a provider-side NIC model change must not take remote unlock down with it.
+MODULES=(virtio_pci virtio_net virtio_blk virtio_scsi wireguard)
+BINARIES=()
+FILES=(/etc/systemd/system/dropbear@.socket.d/10-firewall.conf)
+HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-network sd-nftables sd-dropbear sd-encrypt filesystems fsck)
+
+SD_NETWORK_CONFIG=/etc/systemd/network-initrd
+SD_NFTABLES_CONFIG=/etc/nftables-initrd.conf
+SD_DROPBEAR_PORT=2222
+SD_DROPBEAR_AUTHORIZED_KEYS=/etc/dropbear/initrd_authorized_keys
+SD_DROPBEAR_COMMAND="systemd-tty-ask-password-agent --watch"

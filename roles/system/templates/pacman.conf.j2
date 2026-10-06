@@ -1,0 +1,32 @@
+# Managed by Ansible
+[options]
+HoldPkg = pacman glibc
+Architecture = auto
+CheckSpace
+ParallelDownloads = 5
+DownloadUser = alpm
+SigLevel = Required DatabaseOptional
+LocalFileSigLevel = Optional
+
+{% if cachyos in ['v3', 'v4', 'znver4'] %}
+{%   set mirrors = '/etc/pacman.d/cachyos-' ~ ('v3' if cachyos == 'v3' else 'v4') ~ '-mirrorlist' %}
+[cachyos-{{ cachyos }}]
+Include = {{ mirrors }}
+
+[cachyos-core-{{ cachyos }}]
+Include = {{ mirrors }}
+
+[cachyos-extra-{{ cachyos }}]
+Include = {{ mirrors }}
+
+{% endif %}
+{% if cachyos in ['generic', 'v3', 'v4', 'znver4'] %}
+[cachyos]
+Include = /etc/pacman.d/cachyos-mirrorlist
+
+{% endif %}
+[core]
+Include = /etc/pacman.d/mirrorlist
+
+[extra]
+Include = /etc/pacman.d/mirrorlist

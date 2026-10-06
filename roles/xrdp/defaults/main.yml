@@ -1,0 +1,24 @@
+---
+# AUR packages, pinned to a reviewed commit of their AUR repo. Bump commit and
+# version together, after reading the PKGBUILD diff. In build order: xorgxrdp
+# builds against xrdp.
+xrdp_aur:
+  - name: xrdp
+    commit: 29669f7baa3f9c80ebe50a19c8cf0f1200559b63
+    version: 0.10.6.1-1
+    # 4 of 28 tests fail: login-background scaling comes out a different shade
+    # with the current imlib2 (e.g. 0x5f0000 for 0xff0000). Cosmetic only.
+    nocheck: true
+  - name: xorgxrdp
+    commit: b04814d56be91d993f4d76370c473dda1b691641
+    version: 0.10.5-1
+    pgp: 61ECEABBF2BB40E3A35DF30A9F72CDBC01BF10EB   # Koichiro IWAO, signs xorgxrdp releases
+  # Audio over RDP: loads xrdp's sink/source into the user's pipewire through an
+  # XDG autostart entry when an xrdp session starts.
+  - name: pipewire-module-xrdp
+    commit: 6eb4d23de721b78c76961796bdbd09d21bd9e8eb
+    version: 0.2-1
+
+# depends + makedepends + checkdepends of both PKGBUILDs, so makepkg needs no sudo
+xrdp_build_deps: [base-devel, git, nasm, cmocka, check, libxfont2, xorg-server, xorg-server-devel,
+                  libxrandr, libfdk-aac, ffmpeg, imlib2, fuse3, x264, pipewire]

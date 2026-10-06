@@ -1,0 +1,40 @@
+---
+# Local Proxmox test bed (see tests/proxmox.yml). vdi-test plays the VPS; the
+# controller reaches its WireGuard side through wg-client.
+all:
+  children:
+    proxmox_hosts:
+      hosts:
+        pve:
+          ansible_host: 10.0.30.20
+          ansible_user: acid
+          ansible_python_interpreter: /opt/ansible-venv/bin/python3
+    wg_clients:
+      hosts:
+        wg-client:
+          ansible_host: 10.0.30.191
+          ansible_user: acid
+          wg_client_address: 10.66.0.10/24
+    vdi:
+      hosts:
+        vdi-test:
+          public_ip: 10.0.30.190
+          install_user: acid
+          ansible_host: 10.66.0.1
+          ansible_ssh_common_args: -o ProxyJump=acid@10.0.30.191
+          allowed_cidrs: [10.0.30.0/24]
+          hostname: vdi-test
+          xrdp_desktop: qtile          # NoMachine stays on MATE; RDP tries qtile
+          kernel_console: console=tty0 console=ttyS0,115200   # VM is serial-only (vga: serial0)
+          # Personal Edition needs a licence even for its evaluation, so tests use the free 9.6.3
+          # (the default in main.yml). For PE set nomachine_tarball/_sha256 and vault_nomachine_license.
+          nomachine_authorized_keys:   # NoMachine 9.6.3 rejects ed25519 ("Public key not recognized"); RSA PEM works
+            - "{{ lookup('file', inventory_dir ~ '/../files/nx-test-key-rsa.pub') }}"
+          wg:
+            port: 51820
+            address: 10.66.0.1/24
+            initrd_address: 10.66.0.2/24
+            peers:
+              - name: wg-client
+                public_key: Q4WkxKqDFbVoGUAlVATL+Ia2Og4LCSOWDo3aUtpm32E=
+                allowed_ips: [10.66.0.10/32]

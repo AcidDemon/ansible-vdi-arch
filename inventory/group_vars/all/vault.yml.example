@@ -1,0 +1,8 @@
+---
+# cp vault.yml.example vault.yml && ansible-vault encrypt vault.yml
+vault_luks_passphrase: "change-me"
+vault_user_password: "change-me"            # sudo and screen unlock for `user`
+# nix shell nixpkgs#wireguard-tools -c wg genkey
+vault_wg_private_key: ""
+vault_wg_initrd_private_key: ""
+vault_nomachine_license: ""                 # Personal Edition server.lic, optional

@@ -1,0 +1,51 @@
+---
+# Needed whatever the desktop
+desktop_packages:
+  - xorg-xauth
+  - pipewire
+  - pipewire-pulse
+  - pipewire-alsa
+  - wireplumber
+  - noto-fonts
+  - ttf-dejavu
+
+# Pinned upstream release (github.com/vinceliuice). Bump version and hashes together.
+whitesur_version: 2026-09-10
+whitesur_files:
+  - name: WhiteSur-Light.tar.xz
+    url: https://github.com/vinceliuice/WhiteSur-gtk-theme/raw/{{ whitesur_version }}/release/WhiteSur-Light.tar.xz
+    sha256: 2635570e218afab2d34b0663287054f7b995b9f7f810e97410dcad389987d5ba
+  - name: WhiteSur-Dark.tar.xz
+    url: https://github.com/vinceliuice/WhiteSur-gtk-theme/raw/{{ whitesur_version }}/release/WhiteSur-Dark.tar.xz
+    sha256: 98ac7545ec5290b718875fdfbdd7f0f6b88126103d1eec259ec9fbf80be7b75f
+  - name: WhiteSur-icon-theme.tar.gz
+    url: https://github.com/vinceliuice/WhiteSur-icon-theme/archive/refs/tags/{{ whitesur_version }}.tar.gz
+    sha256: 406c9cd59705583f1754b0eaca96cc48bafda042b88ef143f16d8ae1820ecd95
+
+# Keys are verified against the 9.6.3 cfg samples. NoMachine has no IP allowlist
+# of its own; nftables only lets TCP 4000 in on wg0.
+nomachine_server_cfg:
+  NXUDPPort: "0"                                  # UDP media off: TCP 4000 only
+  ConnectPolicy: autocreate=1,autoconnect=1,automigrate=1,desktop=0,dialog=0,xsessions=0,udp=0
+  EnableUPnP: none
+  EnableLocalNetworkBroadcast: "0"                # no mDNS on 5353
+  EnableNetwork: "0"                              # no NoMachine Network relay
+  EnableFirewallConfiguration: "0"                # nftables is the only firewall source
+  UpdateFrequency: "0"
+  AcceptedAuthenticationMethods: NX-private-key   # key only, no passwords
+  ClientConnectionMethods: NX                     # no SSH-protocol sessions
+  AvailableSessionTypes: physical-desktop
+  EnableAdministratorLogin: "0"
+  # Free edition allows one connection. After a client crash the display can keep
+  # the dead one registered and refuse every new login ("Connection limit
+  # reached"); 1 = drop the existing connection without asking.
+  AutomaticDisconnection: "1"
+  CreateDisplay: "1"                              # headless: NoMachine runs its own X display
+  DisplayOwner: "{{ user }}"
+  DisplayGeometry: "{{ nomachine_geometry }}"
+
+nomachine_node_cfg:
+  AvailableSessionTypes: physical-desktop
+  DefaultDesktopCommand: '"{{ desktop_sessions[desktop].command }}"'   # NoMachine wraps it in dbus-launch itself
+  DisplayServerExtraOptions: '"-nolisten tcp"'
+  AudioInterface: pipewire
