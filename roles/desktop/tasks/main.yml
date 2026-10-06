@@ -40,6 +40,23 @@
     label: "{{ item.item.name }}"
   when: item is changed  # noqa: no-handler
 
+# WhiteSur paints its translucent panel colour on MATE's panel and again on the
+# menu bar inside it, so Applications/Places/System sit on a lighter strip.
+- name: WhiteSur MATE panel, one background behind the menu bar
+  ansible.builtin.blockinfile:
+    path: /usr/share/themes/{{ item }}/gtk-3.0/gtk.css
+    marker: "/* {mark} ANSIBLE MANAGED BLOCK */"
+    block: |
+      .mate-panel-menu-bar menubar { background-color: transparent; }
+  loop: [WhiteSur-Light, WhiteSur-Dark]
+
+# install.sh names the dark icons WhiteSur-dark, the theme asks for WhiteSur-Dark
+- name: WhiteSur-Dark points at the icon theme that exists
+  ansible.builtin.lineinfile:
+    path: /usr/share/themes/WhiteSur-Dark/index.theme
+    regexp: '^IconTheme='
+    line: IconTheme=WhiteSur-dark
+
 - name: Install the WhiteSur icons system-wide (upstream install.sh)
   ansible.builtin.shell: |
     set -e
