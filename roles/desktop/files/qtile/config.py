@@ -304,8 +304,31 @@ screens = [
                     filename=f"{ASSETS}/6.png",
                     background="#313244",
                 ),
+                # CPU and RAM where Cozytile has RAM and battery (a VPS has none)
                 widget.TextBox(
-                    text="\uf1fe",
+                    text="\uf2db ",  # microchip
+                    font="Font Awesome 7 Free Solid",
+                    fontsize=13,
+                    background="#313244",
+                    foreground="#cba6f7",
+                ),
+                widget.CPU(
+                    background="#313244",
+                    format="{load_percent:.0f}%",
+                    foreground="#cba6f7",
+                    font="JetBrainsMono Nerd Font Bold",
+                    fontsize=13,
+                    update_interval=2,
+                ),
+                widget.Image(
+                    filename=f"{ASSETS}/2.png",
+                ),
+                widget.Spacer(
+                    length=8,
+                    background="#313244",
+                ),
+                widget.TextBox(
+                    text="\uf538 ",  # memory (RAM stick)
                     font="Font Awesome 7 Free Solid",
                     fontsize=13,
                     background="#313244",
@@ -313,13 +336,13 @@ screens = [
                 ),
                 widget.Memory(
                     background="#313244",
-                    format="{MemUsed: .0f}{mm}",
+                    format="{MemUsed:.1f} GiB",
+                    measure_mem="G",
                     foreground="#cba6f7",
                     font="JetBrainsMono Nerd Font Bold",
                     fontsize=13,
                     update_interval=5,
                 ),
-                # Cozytile's battery segment dropped: a VPS has no battery
                 widget.Image(
                     filename=f"{ASSETS}/2.png",
                 ),
