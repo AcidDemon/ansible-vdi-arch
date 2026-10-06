@@ -2,3 +2,10 @@
 - name: Compile gschemas (rice)
   ansible.builtin.command: glib-compile-schemas /usr/share/glib-2.0/schemas
   changed_when: true
+
+# picom reads its config only at startup; SIGUSR1 makes a running one reload it
+- name: Reload picom
+  ansible.builtin.command: pkill -USR1 -x -u {{ user }} picom
+  register: picom_reload
+  changed_when: picom_reload.rc == 0
+  failed_when: picom_reload.rc > 1   # 1 = no picom running
