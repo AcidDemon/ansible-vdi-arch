@@ -1,0 +1,13 @@
+# Ted's extra keys (nixfiles modules/cli/yazi), which yazi ignored while they
+# sat in yazi.toml. Left out: g g, t, G and Space, whose defaults (top, new tab,
+# bottom, select) they would have shadowed.
+[mgr]
+prepend_keymap = [
+  { on = ["g", "m"], run = "cd ~/Music",     desc = "Go to Music" },
+  { on = ["g", "p"], run = "cd ~/Pictures",  desc = "Go to Pictures" },
+  { on = ["g", "v"], run = "cd ~/Videos",    desc = "Go to Videos" },
+  { on = ["g", "w"], run = "cd ~/Workspace", desc = "Go to Workspace" },
+  { on = ["g", "t"], run = "tab_create",     desc = "New tab" },
+  { on = ["g", "s"], run = "search",         desc = "Search" },
+  { on = "<C-o>",    run = "open --interactive", desc = "Open with..." },
+]

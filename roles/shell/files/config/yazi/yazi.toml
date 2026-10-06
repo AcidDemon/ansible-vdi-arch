@@ -1,25 +1,3 @@
-[keymap." "]
-" " = "toggle"
-
-[keymap.G]
-"$" = "cd /"
-d = "delete"
-
-[keymap.g]
-d = "cd ~/Downloads"
-g = "cd ~"
-m = "cd ~/Music"
-p = "cd ~/Pictures"
-s = "search"
-t = "tab_create"
-v = "cd ~/Videos"
-w = "cd ~/Workspace"
-
-[keymap.t]
-c = "tab_create --current"
-desc = "New tab at ~"
-t = "tab_create ~"
-
 [mgr]
 linemode = "size_and_mtime"
 ratio = [2, 5, 3]
@@ -48,47 +26,47 @@ mime = "application/pdf"
 use = ["pdf", "open"]
 
 [[open.prepend_rules]]
-name = "*.odt"
+url = "*.odt"
 use = ["office", "open"]
 
 [[open.prepend_rules]]
-name = "*.ods"
+url = "*.ods"
 use = ["office", "open"]
 
 [[open.prepend_rules]]
-name = "*.odp"
+url = "*.odp"
 use = ["office", "open"]
 
 [[open.prepend_rules]]
-name = "*.doc"
+url = "*.doc"
 use = ["office", "open"]
 
 [[open.prepend_rules]]
-name = "*.docx"
+url = "*.docx"
 use = ["office", "open"]
 
 [[open.prepend_rules]]
-name = "*.xls"
+url = "*.xls"
 use = ["office", "open"]
 
 [[open.prepend_rules]]
-name = "*.xlsx"
+url = "*.xlsx"
 use = ["office", "open"]
 
 [[open.prepend_rules]]
-name = "*.ppt"
+url = "*.ppt"
 use = ["office", "open"]
 
 [[open.prepend_rules]]
-name = "*.pptx"
+url = "*.pptx"
 use = ["office", "open"]
 
 [[open.prepend_rules]]
-name = "*.7z"
+url = "*.7z"
 use = ["open"]
 
 [[open.prepend_rules]]
-name = "*.zip"
+url = "*.zip"
 use = ["open"]
 
 [[opener.edit]]
@@ -125,16 +103,6 @@ run = 'mpv "$@"'
 block = true
 desc = "View with bat"
 run = 'bat --paging=always "$@"'
-
-[[prepend_keymap]]
-desc = "New tab at current dir"
-on = ["t", "c"]
-run = "tab_create --current"
-
-[[prepend_keymap]]
-desc = "Open with..."
-on = ["<C-o>"]
-run = "open --interactive"
 
 [preview]
 max_height = 8192
