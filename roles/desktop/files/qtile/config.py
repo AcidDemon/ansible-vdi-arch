@@ -314,7 +314,7 @@ screens = [
                 ),
                 widget.CPU(
                     background="#313244",
-                    format="{load_percent:.0f}%",
+                    format="{load_percent:3.0f}%",   # fixed width: "  5%" .. "100%", the bar doesn't shift
                     foreground="#cba6f7",
                     font="JetBrainsMono Nerd Font Bold",
                     fontsize=13,
@@ -336,7 +336,7 @@ screens = [
                 ),
                 widget.Memory(
                     background="#313244",
-                    format="{MemUsed:.1f} GiB",
+                    format="{MemUsed:4.1f} GiB",
                     measure_mem="G",
                     foreground="#cba6f7",
                     font="JetBrainsMono Nerd Font Bold",
@@ -367,8 +367,8 @@ screens = [
                     volume_down_command="pamixer -d 5",
                     get_volume_command="pamixer --get-volume-human",
                     update_interval=0.2,
-                    unmute_format="{volume}%",
-                    mute_format="M",
+                    unmute_format="{volume:>3}%",
+                    mute_format="   M",
                 ),
                 widget.Image(
                     filename=f"{ASSETS}/5.png",
