@@ -1,0 +1,73 @@
+# Managed by Ansible (roles/shell). Ted's zsh (nixfiles modules/cli/zsh) on Arch:
+# powerlevel10k, fzf-tab on <TAB>, autosuggestions, syntax highlighting, vi keys.
+# Aliases and the fzf-tab setup come from the FreeBSD dotfiles (~/.config/zsh,
+# ~/.config/shell). Local additions go in ~/.zshrc.local.
+
+plugins=/usr/local/share/zsh/plugins     # pinned powerlevel10k and fzf-tab
+arch_plugins=/usr/share/zsh/plugins      # pacman packages
+
+# Powerlevel10k instant prompt; nothing that prints may come before this.
+if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
+  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+fi
+source $plugins/powerlevel10k/powerlevel10k.zsh-theme
+[[ -r ~/.p10k.zsh ]] && source ~/.p10k.zsh
+export POWERLEVEL9K_DISABLE_CONFIGURATION_WIZARD=1
+
+HISTFILE="${XDG_STATE_HOME:-$HOME/.local/state}/zsh/history"
+[[ -d ${HISTFILE:h} ]] || mkdir -p ${HISTFILE:h}
+HISTSIZE=25000
+SAVEHIST=25000
+setopt autocd extended_history hist_expire_dups_first hist_ignore_all_dups \
+  hist_ignore_dups hist_ignore_space share_history
+
+umask 0077
+
+# vi mode, $EDITOR on ^X^E, history expansion on space
+bindkey -v
+export KEYTIMEOUT=1
+autoload -Uz edit-command-line
+zle -N edit-command-line
+bindkey '^X^E' edit-command-line
+bindkey ' ' magic-space
+
+# Completion-strategy suggestions for network commands would open SSH connections
+ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+ZSH_AUTOSUGGEST_COMPLETION_IGNORE='(rsync|scp|sftp|ssh) *'
+
+for f in ~/.config/zsh/{suffix,global}-aliases.zsh ~/.config/shell/{aliases,aliases-zsh}.sh; do
+  [[ -r $f ]] && source $f
+done
+unset f
+
+export FZF_PREVIEW_IMAGE_HANDLER="kitty"
+export FZF_CTRL_T_OPTS="--preview 'fzf-preview-wrapper {} 2>/dev/null' --preview-window=right:50% --bind=tab:down,shift-tab:up"
+export FZF_ALT_C_OPTS="--preview 'eza -1 --color=always --tree --level=2 --icons {}' --preview-window=right:50% --bind=tab:down,shift-tab:up"
+
+autoload -Uz compinit
+compinit
+
+# fzf-tab after compinit, before the plugins that wrap widgets
+source $plugins/fzf-tab/fzf-tab.plugin.zsh
+[[ -r ~/.config/zsh/fzf-tab-config.zsh ]] && source ~/.config/zsh/fzf-tab-config.zsh
+zstyle ':completion:*' menu select
+zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
+
+source <(fzf --zsh)                      # ^T files, ^R history, Alt-C cd
+eval "$(zoxide init zsh)"
+export LS_COLORS="$(vivid generate catppuccin-mocha)"
+
+[ "$TERM" = "xterm-kitty" ] && alias ssh='kitty +kitten ssh'
+
+[[ -r ~/.zshrc.local ]] && source ~/.zshrc.local
+
+source $arch_plugins/zsh-autosuggestions/zsh-autosuggestions.zsh
+ZSH_HIGHLIGHT_HIGHLIGHTERS=(main brackets pattern regexp root line cursor)
+source $arch_plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+# after syntax highlighting, as its README asks
+source $arch_plugins/zsh-history-substring-search/zsh-history-substring-search.zsh
+bindkey '^[[A' history-substring-search-up
+bindkey '^[OA' history-substring-search-up
+bindkey '^[[B' history-substring-search-down
+bindkey '^[OB' history-substring-search-down
+unset plugins arch_plugins

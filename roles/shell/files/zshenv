@@ -1,0 +1,7 @@
+# Managed by Ansible (roles/shell). The tool settings from the FreeBSD dotfiles'
+# exports.sh; the rest of that file is specific to that box.
+(( $+commands[nvim] )) && export EDITOR=nvim VISUAL=nvim
+export RIPGREP_CONFIG_PATH="$HOME/.config/ripgrep/config"
+export LESS="-R --quiet"
+# col -bx strips the overstrike so bat can highlight the plain text
+export MANPAGER="sh -c 'col -bx | bat -l man -p'"

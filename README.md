@@ -108,6 +108,19 @@ why `desktop` offers X11 sessions only: `mate` (default), `kde` or `qtile` (tili
 X11 session anymore, and KDE drops its own with Plasma 6.8, so `kde` only works
 until Arch ships that release.
 
+With qtile as a session and `rice: true`, qtile gets Cozytile's bar, recoloured to
+Catppuccin Mocha. Rofi is Ted's, kitty, zathura and nvim come from the FreeBSD
+dotfiles, dunst shows notifications and picom rounds the corners. The VPS has no
+GPU, so picom uses its xrender backend and does without blur. kitty can't make its
+own background translucent either (llvmpipe offers it no sRGB visual with alpha),
+so picom draws the whole kitty window at 90% opacity, text included.
+
+Every `site.yml` run also sets up the shell the way it is on Ted: zsh as the login
+shell with powerlevel10k and fzf-tab (both from pinned tarballs), eza, bat and vivid
+in Catppuccin colours, and tmux and yazi with the FreeBSD configs. The first tmux
+start clones TPM and its plugins from GitHub, unpinned. Ansible overwrites
+`~/.zshrc`, so put your own additions in `~/.zshrc.local`.
+
 ## Setup
 
 ```sh

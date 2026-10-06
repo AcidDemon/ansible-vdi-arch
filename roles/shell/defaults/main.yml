@@ -1,0 +1,14 @@
+---
+# zsh as on Ted: powerlevel10k, fzf-tab, eza/bat/vivid in Catppuccin Mocha, tmux, yazi.
+shell_packages:
+  [zsh, zsh-autosuggestions, zsh-syntax-highlighting, zsh-history-substring-search,
+   fzf, eza, bat, vivid, zoxide, ripgrep, fd, git-delta, tealdeer, jq, ouch,
+   tmux, git, xclip, yazi,
+   # fzf-preview and yazi previews
+   file, mediainfo, glow, poppler, ffmpegthumbnailer]
+
+# Not in the Arch repos; the same releases Ted's nixpkgs builds.
+p10k_rev: 36f3045d69d1ba402db09d09eb12b42eebe0fa3b   # 1.20.15
+p10k_sha256: 61a0ffd025d75457fa07f10805b12479522b6ab68c6733c816012377fc23e1ff
+fzf_tab_version: v1.3.0
+fzf_tab_sha256: d75ac08c2c8af5a6a0478787b0f11fabbe24951973b7841ae963431e2070ee9a

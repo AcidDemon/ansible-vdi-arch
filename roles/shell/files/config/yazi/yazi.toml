@@ -1,0 +1,149 @@
+[keymap." "]
+" " = "toggle"
+
+[keymap.G]
+"$" = "cd /"
+d = "delete"
+
+[keymap.g]
+d = "cd ~/Downloads"
+g = "cd ~"
+m = "cd ~/Music"
+p = "cd ~/Pictures"
+s = "search"
+t = "tab_create"
+v = "cd ~/Videos"
+w = "cd ~/Workspace"
+
+[keymap.t]
+c = "tab_create --current"
+desc = "New tab at ~"
+t = "tab_create ~"
+
+[mgr]
+linemode = "size_and_mtime"
+ratio = [2, 5, 3]
+show_hidden = true
+sort_by = "natural"
+sort_dir_first = true
+
+[[open.prepend_rules]]
+mime = "text/*"
+use = "edit"
+
+[[open.prepend_rules]]
+mime = "image/*"
+use = ["image", "open"]
+
+[[open.prepend_rules]]
+mime = "video/*"
+use = ["play", "open"]
+
+[[open.prepend_rules]]
+mime = "audio/*"
+use = ["play", "open"]
+
+[[open.prepend_rules]]
+mime = "application/pdf"
+use = ["pdf", "open"]
+
+[[open.prepend_rules]]
+name = "*.odt"
+use = ["office", "open"]
+
+[[open.prepend_rules]]
+name = "*.ods"
+use = ["office", "open"]
+
+[[open.prepend_rules]]
+name = "*.odp"
+use = ["office", "open"]
+
+[[open.prepend_rules]]
+name = "*.doc"
+use = ["office", "open"]
+
+[[open.prepend_rules]]
+name = "*.docx"
+use = ["office", "open"]
+
+[[open.prepend_rules]]
+name = "*.xls"
+use = ["office", "open"]
+
+[[open.prepend_rules]]
+name = "*.xlsx"
+use = ["office", "open"]
+
+[[open.prepend_rules]]
+name = "*.ppt"
+use = ["office", "open"]
+
+[[open.prepend_rules]]
+name = "*.pptx"
+use = ["office", "open"]
+
+[[open.prepend_rules]]
+name = "*.7z"
+use = ["open"]
+
+[[open.prepend_rules]]
+name = "*.zip"
+use = ["open"]
+
+[[opener.edit]]
+desc = "Edit in $EDITOR"
+orphan = true
+run = """kitty -e $SHELL -lc 'nvim "$@"'"""
+
+[[opener.image]]
+desc = "Open images (imv)"
+orphan = true
+run = 'imv "$@"'
+
+[[opener.office]]
+desc = "Open office docs"
+orphan = true
+run = 'libreoffice "$@"'
+
+[[opener.open]]
+desc = "Open with xdg-open"
+orphan = true
+run = 'xdg-open "$@"'
+
+[[opener.pdf]]
+desc = "Open PDFs (zathura)"
+orphan = true
+run = 'zathura "$@"'
+
+[[opener.play]]
+desc = "Open with mpv"
+orphan = true
+run = 'mpv "$@"'
+
+[[opener.view]]
+block = true
+desc = "View with bat"
+run = 'bat --paging=always "$@"'
+
+[[prepend_keymap]]
+desc = "New tab at current dir"
+on = ["t", "c"]
+run = "tab_create --current"
+
+[[prepend_keymap]]
+desc = "Open with..."
+on = ["<C-o>"]
+run = "open --interactive"
+
+[preview]
+max_height = 8192
+max_width = 8192
+wrap = "no"
+
+[tasks]
+image_alloc = 0
+image_bound = [0, 0]
+macro_workers = 6
+micro_workers = 12
+

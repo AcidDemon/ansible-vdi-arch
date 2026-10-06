@@ -14,6 +14,7 @@
     - system
     - desktop
     - apps   # software, services, "(via Tor)" menu entries
+    - shell  # zsh + powerlevel10k, fzf-tab, eza/bat, tmux, yazi (as on Ted)
     - role: xrdp
       when: xrdp | default(false)
     - role: rice   # qtile look: Catppuccin Mocha, Ted's rofi, dotfiles

@@ -1,0 +1,7 @@
+---
+# bat only sees themes in ~/.config/bat/themes after rebuilding its cache
+- name: Load the Catppuccin theme into bat
+  ansible.builtin.command: bat cache --build
+  become: true
+  become_user: "{{ user }}"
+  changed_when: true

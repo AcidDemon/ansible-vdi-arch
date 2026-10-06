@@ -1,0 +1,69 @@
+---
+- name: Shell packages
+  community.general.pacman:
+    name: "{{ shell_packages }}"
+
+- name: Plugin download dir
+  ansible.builtin.file:
+    path: /var/cache/zsh-plugins
+    state: directory
+    mode: "0755"
+
+- name: Download powerlevel10k and fzf-tab
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: /var/cache/zsh-plugins/{{ item.name }}-{{ item.version }}.tar.gz
+    checksum: sha256:{{ item.sha256 }}
+    mode: "0644"
+  loop:
+    - {name: powerlevel10k, version: "{{ p10k_rev }}", sha256: "{{ p10k_sha256 }}",
+       url: "https://github.com/romkatv/powerlevel10k/archive/{{ p10k_rev }}.tar.gz"}
+    - {name: fzf-tab, version: "{{ fzf_tab_version }}", sha256: "{{ fzf_tab_sha256 }}",
+       url: "https://github.com/Aloxaf/fzf-tab/archive/refs/tags/{{ fzf_tab_version }}.tar.gz"}
+  loop_control:
+    label: "{{ item.name }} {{ item.version }}"
+  register: zsh_plugins
+
+# Replaced as a whole when the pinned version changes, so no stale files stay behind.
+- name: Unpack them to /usr/local/share/zsh/plugins
+  ansible.builtin.shell: |
+    set -e
+    umask 022
+    d=/usr/local/share/zsh/plugins/{{ item.item.name }}
+    rm -rf "$d"
+    mkdir -p "$d"
+    tar -xzf {{ item.dest }} -C "$d" --strip-components=1
+    touch "$d/.{{ item.item.version }}"
+  args:
+    creates: /usr/local/share/zsh/plugins/{{ item.item.name }}/.{{ item.item.version }}
+  loop: "{{ zsh_plugins.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: Fzf previews (fzf-preview by niksingh710, plus Ted's wrapper)
+  ansible.builtin.copy:
+    src: bin/
+    dest: /usr/local/bin/
+    mode: "0755"
+
+- name: Dotfiles (zsh, p10k, aliases, tmux, yazi, bat, ripgrep)
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: /home/{{ user }}/{{ item.dest }}
+    owner: "{{ user }}"
+    group: "{{ user }}"
+    mode: "0644"
+    directory_mode: "0755"
+  loop:
+    - {src: zshrc, dest: .zshrc}
+    - {src: zshenv, dest: .zshenv}
+    - {src: p10k.zsh, dest: .p10k.zsh}
+    - {src: config/, dest: .config/}
+  loop_control:
+    label: "{{ item.dest }}"
+  notify: Load the Catppuccin theme into bat
+
+- name: Zsh as login shell
+  ansible.builtin.user:
+    name: "{{ user }}"
+    shell: /usr/bin/zsh
