@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# ~/.config/rofi/bin/powermenu -- Ted's rofi powermenu, trimmed for the VDI VPS.
+# Flags:
+#   -i | --icons    -> icons only
+#   -t | --text     -> icons + text
+#   -w | --width N  -> set rofi window width (e.g. 32em or 520px)
+#   -f | --font F   -> override the font
+#   --unicode       -> use standard Unicode symbols
+#
+# Only Lock and Logout on purpose. This is a remote VPS reached over
+# NoMachine/xrdp: suspend/hibernate would leave it unreachable, and after a
+# reboot or power-off the LUKS volume has to be unlocked out of band before the
+# desktop comes back. Reboot/shut down deliberately from a shell instead.
+set -euo pipefail
+
+DDIR="${HOME}/.config/rofi/config"
+THEME="${DDIR}/powermenu.rasi"
+CONFIRM="${DDIR}/confirm.rasi"
+FONT="IosevkaTerm Nerd Font 16"
+WIDTH=""
+
+ICON_SET="nerd"   # or "unicode" via --unicode
+FORCE_LAYOUT=""   # "icons" | "text"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -i|--icons)   FORCE_LAYOUT="icons" ;;
+    -t|--text)    FORCE_LAYOUT="text" ;;
+    -w|--width)   shift; WIDTH="${1:-}";;
+    -f|--font)    shift; FONT="${1:-}";;
+    --unicode)    ICON_SET="unicode" ;;
+    --nerd)       ICON_SET="nerd" ;;
+  esac
+  shift || true
+done
+
+# powermenu.rasi carries a "BUTTON=TRUE|FALSE" marker that picks the layout.
+detect_layout_from_theme() {
+  awk '
+    $0 !~ /^[[:space:]]*\/\// {
+      if (match($0, /BUTTON[[:space:]]*=[[:space:]]*TRUE/i)) { print "icons"; exit }
+      if (match($0, /BUTTON[[:space:]]*=[[:space:]]*FALSE/i)) { print "text"; exit }
+    }
+  ' "$THEME" 2>/dev/null || true
+}
+
+LAYOUT="${FORCE_LAYOUT:-$(detect_layout_from_theme)}"
+[ -z "${LAYOUT}" ] && LAYOUT="text"
+
+if [ "$ICON_SET" = "unicode" ]; then
+  I_LOCK="🔒"; I_LOGOUT="🚪"
+else
+  I_LOCK=""; I_LOGOUT=""
+fi
+
+if [ "$LAYOUT" = "icons" ]; then
+  L_LOCK="$I_LOCK"
+  L_LOGOUT="$I_LOGOUT"
+else
+  L_LOCK="$I_LOCK  Lock"
+  L_LOGOUT="$I_LOGOUT  Logout"
+fi
+
+lock_screen() { i3lock -c 1e1e2e; }
+logout_now()  { qtile cmd-obj -o cmd -f shutdown; }
+
+confirm() {
+  choice="$(printf '%s\n%s\n' 'Yes' 'No' | rofi -dmenu -i -p 'Are you sure?' \
+    -theme "$CONFIRM" -font "$FONT")" || return 1
+  [ "$choice" = "Yes" ]
+}
+
+options="$(printf '%s\n%s' "$L_LOCK" "$L_LOGOUT")"
+
+run_rofi() {
+  set -- rofi -dmenu -p "" -selected-row 0 -theme "$THEME"
+  [ -n "$FONT" ]  && set -- "$@" -font "$FONT"
+  [ -n "$WIDTH" ] && set -- "$@" -theme-str "window{width: ${WIDTH};}"
+  printf "%s" "$options" | "$@"
+}
+
+choice="$(run_rofi)" || exit 0
+case "$choice" in
+  "$L_LOCK")   lock_screen ;;
+  "$L_LOGOUT") confirm && logout_now ;;
+  *) exit 0 ;;
+esac

@@ -1,0 +1,46 @@
+map D set "first-page-column 1:1"
+map [fullscreen] a adjust_window best-fit
+
+set completion-bg	"#313244"
+set completion-fg	"#cdd6f4"
+set completion-group-bg	"#313244"
+set completion-group-fg	"#cdd6f4"
+set completion-highlight-bg	"#313244"
+set completion-highlight-fg	"#cdd6f4"
+set default-bg	"#1e1e2e"
+set default-fg	"#cdd6f4"
+set font	"Noto Sans 14"
+set highlight-active-color	"#f2cdcd"
+set highlight-color	"#313244"
+set highlight-fg	"#f2cdcd"
+set index-active-bg	"#313244"
+set index-active-fg	"#cdd6f4"
+set index-bg	"#1e1e2e"
+set index-fg	"#cdd6f4"
+set inputbar-bg	"#313244"
+set inputbar-fg	"#cdd6f4"
+set notification-bg	"#313244"
+set notification-error-bg	"#313244"
+set notification-error-fg	"#f38ba8"
+set notification-fg	"#cdd6f4"
+set notification-warning-bg	"#313244"
+set notification-warning-fg	"#f9e2af"
+set recolor	"true"
+set recolor-darkcolor	"#cdd6f4"
+set recolor-lightcolor	"#1e1e2e"
+set render-loading-bg	"#1e1e2e"
+set render-loading-fg	"#cdd6f4"
+set selection-clipboard	"clipboard"
+set statusbar-bg	"#181825"
+set statusbar-fg	"#cdd6f4"
+map <Tab>   toggle_index
+map [fullscreen] f   toggle_fullscreen
+map [fullscreen] h   navigate previous
+map [fullscreen] j   scroll down
+map [fullscreen] k   scroll up
+map [fullscreen] l   navigate next
+map [fullscreen] s   adjust_window width
+map b   toggle_statusbar
+map f   toggle_fullscreen
+map r   recolor
+

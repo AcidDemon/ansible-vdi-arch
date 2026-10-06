@@ -16,3 +16,5 @@
     - apps   # software, services, "(via Tor)" menu entries
     - role: xrdp
       when: xrdp | default(false)
+    - role: rice   # qtile look: Catppuccin Mocha, Ted's rofi, dotfiles
+      when: rice | default(false) and 'qtile' in [desktop, xrdp_desktop]

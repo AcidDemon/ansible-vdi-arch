@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# rofi-calc (Arch: rofi-calc). Enter copies the result to the CLIPBOARD.
+set -euo pipefail
+
+exec rofi \
+	-show calc -modi calc \
+	-no-show-match -no-sort \
+	-calc-command "echo -n '{result}' | xclip -selection clipboard" \
+	-theme "$HOME/.config/rofi/config/calc.rasi"

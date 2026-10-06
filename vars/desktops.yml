@@ -9,5 +9,6 @@ desktop_sessions:
     packages: [plasma-desktop, plasma-x11-session, konsole, dolphin, spectacle]
     command: /usr/bin/startplasma-x11
   qtile:                           # tiling, keys mirror niri on Ted (roles/desktop/files/qtile)
-    packages: [qtile, kitty, thunar, rofi, rofi-emoji, rofi-calc, dunst, playerctl, i3lock, xorg-setxkbmap]
+    packages: [qtile, python-psutil, kitty, thunar, rofi, rofi-emoji, rofi-calc, dunst, playerctl, i3lock,
+               xorg-setxkbmap, picom, feh, ttf-jetbrains-mono-nerd]
     command: /usr/local/bin/vdi-qtile-session

@@ -1,0 +1,33 @@
+---
+# Look for the qtile session: Catppuccin Mocha, Ted's rofi, the FreeBSD box's
+# kitty/zathura/nvim/GTK setup, dunst + picom after Cozytile.
+rice_packages:
+  # rofi (Ted's scripts) and friends
+  [rofi, rofi-calc, rofimoji, xclip, copyq, i3lock, libnotify, dunst, picom, feh,
+   # terminal, viewers, files
+   kitty, zathura, zathura-pdf-mupdf, thunar, tumbler, ffmpegthumbnailer, gvfs, xdg-utils,
+   # fonts, cursor, Qt look
+   ttf-iosevkaterm-nerd, ttf-jetbrains-mono-nerd, otf-font-awesome, noto-fonts, adwaita-icon-theme,
+   capitaine-cursors, qt6ct, kvantum, gtk-update-icon-cache, gsettings-desktop-schemas,
+   # neovim config: lazy.nvim, treesitter, telescope, mason, LSP servers/formatters it enables
+   neovim, git, ripgrep, fd, tree-sitter-cli, gcc, curl, tar, unzip, nodejs, npm,
+   lua-language-server, stylua, shfmt, prettier, markdown-oxide, opencode]
+
+# Directories copied into the user's home (files 0644, dirs 0755)
+rice_dotfiles:
+  - {src: rofi/config/, dest: .config/rofi/config/}
+  - {src: dotfiles/kitty/, dest: .config/kitty/}
+  - {src: dotfiles/zathura/, dest: .config/zathura/}
+  - {src: dotfiles/Thunar/, dest: .config/Thunar/}
+  - {src: notify-compositor/dunst/, dest: .config/dunst/}
+  - {src: notify-compositor/picom/, dest: .config/picom/}
+  - {src: gtk/gtk-3.0/, dest: .config/gtk-3.0/}
+  - {src: gtk/gtk-4.0/, dest: .config/gtk-4.0/}
+  - {src: gtk/qt6ct/, dest: .config/qt6ct/}
+  - {src: gtk/Kvantum/, dest: .config/Kvantum/}
+  - {src: gtk/icons-default/, dest: .icons/default/}
+
+# Colloid icons in their Catppuccin variant (what Ted and the FreeBSD box use).
+# No Arch package; pinned upstream tag, the same one Ted's nixpkgs builds.
+colloid_version: 2026-08-10
+colloid_sha256: 367c3ce3ab85721e41ca9aa4fccd1761ec236d1b8cd7daf65f5e9ec88c1a8a15

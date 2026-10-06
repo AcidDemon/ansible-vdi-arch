@@ -1,0 +1,4 @@
+---
+- name: Compile gschemas (rice)
+  ansible.builtin.command: glib-compile-schemas /usr/share/glib-2.0/schemas
+  changed_when: true

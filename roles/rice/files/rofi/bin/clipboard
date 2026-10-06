@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Clipboard history: rofi list fed from copyq, so it looks like Ted's rofi-cliphist.
+# ponytail: `copyq menu` would be one line but pops CopyQ's own Qt menu, not the rofi theme.
+# Needs the copyq server running (started by the session autostart).
+set -euo pipefail
+
+THEME="$HOME/.config/rofi/config/launcher.rasi"
+
+# One line per history row in row order, so rofi's index (-format i) == copyq row.
+items="$(copyq eval -- '
+for (var i = 0; i < size(); ++i) {
+  var t = str(read(i)).replace(/\s+/g, " ").trim();
+  print((t || "[non-text item]").substring(0, 200) + "\n");
+}')" || { notify-send "Clipboard" "CopyQ is not running" || true; exit 1; }
+[ -n "$items" ] || exit 0   # empty history: no blank row to "select"
+
+idx="$(printf '%s\n' "$items" \
+	| rofi -dmenu -p "" -no-custom -format i -theme "$THEME" \
+		-theme-str 'textbox-prompt-colon { str: ""; }')" || exit 0
+
+# select = copy row to clipboard and move it to the top of the history.
+copyq select "$idx"
+notify-send "Clipboard" "Copied from history" || true

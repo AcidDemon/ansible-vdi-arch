@@ -1,0 +1,3 @@
+# Xcursor "default" theme: qtile's root window and non-GTK X clients fall back here.
+[Icon Theme]
+Inherits=capitaine-cursors-light

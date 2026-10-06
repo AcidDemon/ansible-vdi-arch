@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# rofimoji copies straight to the CLIPBOARD via xclip (X11; no typer needed).
+set -euo pipefail
+
+THEME="$HOME/.config/rofi/config/launcher.rasi"
+
+if rofimoji \
+	--prompt "" \
+	--selector rofi \
+	--selector-args "-theme $THEME -p \"\" -theme-str 'textbox-prompt-colon { str: \"\"; }'" \
+	--action copy \
+	--clipboarder xclip; then
+	notify-send "Emoji" "Copied to clipboard" || true
+fi

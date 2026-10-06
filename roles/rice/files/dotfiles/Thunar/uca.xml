@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<actions>
+
+  <!-- Open terminal in selected directory -->
+  <action>
+    <icon>utilities-terminal</icon>
+    <name>Open Terminal Here</name>
+    <submenu></submenu>
+    <unique-id>open-terminal-here</unique-id>
+    <command>kitty --working-directory %f</command>
+    <description>Open terminal in current working directory.</description>
+    <patterns>*</patterns>
+    <startup-notify/>
+    <directories/>
+  </action>
+
+  <!-- Search within selected folder -->
+  <action>
+    <icon>system-search</icon>
+    <name>Search files in folder</name>
+    <unique-id>search-files-in-folder</unique-id>
+    <command>catfish %f</command>
+    <description>Search for files in folder with Catfish.</description>
+    <patterns>*</patterns>
+    <startup-notify/>
+    <directories/>
+  </action>
+
+  <!-- Extract bzip2 tarballs -->
+  <action>
+    <icon>application-x-archive</icon>
+    <name>Extract here (bzip2)</name>
+    <unique-id>extract-here-bzip2</unique-id>
+    <command>tar xjf %f</command>
+    <description>Extract files from archive here.</description>
+    <patterns>*.tar.bz2;*.tbz2</patterns>
+    <other-files/>
+  </action>
+
+  <!-- Extract zip archives -->
+  <action>
+    <icon>application-zip</icon>
+    <name>Extract here (zip)</name>
+    <unique-id>extract-here-zip</unique-id>
+    <command>unzip %f</command>
+    <description>Extract files from archive here.</description>
+    <patterns>*.zip</patterns>
+    <other-files/>
+  </action>
+
+  <!-- Create tar.gz from selected directory -->
+  <action>
+    <icon>application-x-archive</icon>
+    <name>Create tar.gz from folder</name>
+    <unique-id>create-tar-gz</unique-id>
+    <command>tar czvf %n.tar.gz %n</command>
+    <description>Create tar.gz from folder.</description>
+    <patterns>*</patterns>
+    <directories/>
+  </action>
+
+  <!-- Convert PNG -> JPEG -->
+  <action>
+    <icon>image-x-generic</icon>
+    <name>Convert to JPEG</name>
+    <unique-id>convert-to-jpeg</unique-id>
+    <command>convert %f -quality 75 $(basename %f .png).jpg</command>
+    <description>Convert PNG to JPEG.</description>
+    <patterns>*.png</patterns>
+    <image-files/>
+  </action>
+
+  <!-- Rotate images clockwise -->
+  <action>
+    <icon>object-rotate-right</icon>
+    <name>Rotate Clockwise</name>
+    <unique-id>rotate-clockwise</unique-id>
+    <command>for file in %F; do exiftran -i9 "$file"; done</command>
+    <description>Rotate image clockwise.</description>
+    <patterns>*.jpg;*.JPG;*.jpeg;*.JPEG</patterns>
+    <image-files/>
+  </action>
+
+  <!-- SHA256 -> clipboard -->
+  <action>
+    <icon>edit-copy</icon>
+    <name>SHA256 sum -> clipboard</name>
+    <unique-id>sha256-clipboard</unique-id>
+    <command>sh -c 'sha256sum %F | xclip -selection clipboard'</command>
+    <description>Compute SHA256 and copy to clipboard.</description>
+    <patterns>*</patterns>
+    <text-files/>
+    <image-files/>
+    <audio-files/>
+    <video-files/>
+    <other-files/>
+  </action>
+
+  <!-- Compare files or directories with Meld -->
+  <action>
+    <icon>view-compare</icon>
+    <name>Compare files</name>
+    <unique-id>compare-files</unique-id>
+    <command>meld %F</command>
+    <description>Compare files or directories with Meld.</description>
+    <patterns>*</patterns>
+    <startup-notify/>
+    <text-files/>
+    <directories/>
+  </action>
+
+  <!-- Move selection into a new folder -->
+  <action>
+    <icon>folder-new</icon>
+    <name>Move files into new folder</name>
+    <unique-id>move-files-into-new-folder</unique-id>
+    <command>NEW_FOLDER=$(/usr/bin/zenity --entry --title 'Move into new folder' --text 'Please enter a name for the new folder') &amp;&amp; mkdir "$NEW_FOLDER" &amp;&amp; mv %F "$NEW_FOLDER"</command>
+    <description>Move into new folder.</description>
+    <patterns>*</patterns>
+    <directories/>
+    <text-files/>
+    <image-files/>
+    <audio-files/>
+    <other-files/>
+  </action>
+
+  <!-- Disk usage (Baobab) on selected directory -->
+  <action>
+    <icon>utilities-system-monitor</icon>
+    <name>Disk Usage</name>
+    <unique-id>disk-usage</unique-id>
+    <command>baobab %d</command>
+    <description>View disk usage in Baobab.</description>
+    <patterns>*</patterns>
+    <startup-notify/>
+    <directories/>
+  </action>
+
+  <!-- Shred files (destructive) -->
+  <action>
+    <icon>edit-delete</icon>
+    <name>Shred and delete file(s)</name>
+    <unique-id>shred-and-delete-files</unique-id>
+    <command>sh -c 'zenity --question &amp;&amp; for f in %F; do shred -fuz "$f"; done'</command>
+    <description>Shreds and deletes file.</description>
+    <patterns>*</patterns>
+    <text-files/>
+    <image-files/>
+    <audio-files/>
+    <video-files/>
+    <other-files/>
+  </action>
+
+  <!-- Mount ISO -->
+  <action>
+    <icon>application-x-iso9660-image</icon>
+    <name>Mount image (iso)</name>
+    <unique-id>mount-iso</unique-id>
+    <command>sh -c 'udisksctl loop-setup -f %f'</command>
+    <description>Mount ISO image with udisksctl.</description>
+    <patterns>*.iso;*.ISO</patterns>
+    <other-files/>
+  </action>
+
+</actions>
+

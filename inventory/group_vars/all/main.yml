@@ -56,6 +56,12 @@ kernel_console: console=ttyS0,115200 console=tty0
 # kde stops working here. Switching restarts NoMachine's display (open apps close).
 desktop: mate
 xrdp_desktop: "{{ desktop }}"      # what RDP sessions start; set it apart to compare desktops
+# qtile look (roles/rice): Catppuccin Mocha, Ted's rofi, kitty/nvim/zathura from
+# the FreeBSD dotfiles, dunst, picom with rounded corners. Only with qtile.
+rice: true
+# Local folder of wallpapers to sync to ~/.local/share/wallpapers ("" = none);
+# qtile shows a random one every 15 minutes.
+wallpapers_src: ""
 # NoMachine 10 has no free edition. Either the last free tarball (9.6.3, no more
 # security fixes) or Personal Edition 10.x plus nomachine_license.
 nomachine_tarball: "{{ inventory_dir }}/../files/nomachine_9.6.3_1_x86_64.tar.gz"

@@ -5,7 +5,12 @@
 # as an X11 tiling WM can: niri's scrolling columns map to qtile's Columns layout,
 # niri-quake to a ScratchPad drop-down, swaync to dunst, cliphist to CopyQ.
 # Left out: overview, monitor power-off, brightness keys (no monitor on a VPS).
+#
+# Look: Cozytile's floating bar of rounded segments, in Catppuccin Mocha. Rounded
+# window corners come from picom; rofi/dunst/kitty themes come from the rice role.
+import glob
 import os
+import random
 import shutil
 
 from libqtile import bar, hook, layout, qtile, widget
@@ -17,6 +22,23 @@ mod = "mod4"
 terminal = "kitty"
 volume = "wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@"
 workspaces = ["main", "pim", "chat", "scratch", "music"]
+
+# Catppuccin Mocha
+c = dict(base="#1e1e2e", mantle="#181825", crust="#11111b", surface0="#313244",
+         surface1="#45475a", overlay0="#6c7086", text="#cdd6f4", subtext0="#a6adc8",
+         lavender="#b4befe", blue="#89b4fa", mauve="#cba6f7", pink="#f5c2e7",
+         red="#f38ba8", peach="#fab387", green="#a6e3a1", sky="#89dceb")
+
+# Ted's rofi scripts when the rice role installed them, plain rofi otherwise
+def rofi(script, fallback):
+    path = os.path.expanduser(f"~/.config/rofi/bin/{script}")
+    return path if os.access(path, os.X_OK) else fallback
+
+# Wallpapers rotate like awww-random on the FreeBSD box (rotate.conf): a random
+# image from this dir every 15 minutes. feh draws them; gdk-pixbuf would load
+# them through glycin, which hangs here (see mate-screenshot).
+WALLPAPER_DIR = os.path.expanduser("~/.local/share/wallpapers")
+WALLPAPER_INTERVAL = 900
 
 
 @lazy.function
@@ -38,15 +60,15 @@ def keys_both(mods, names, cmd, desc=""):
 keys = [
     Key([mod, "shift"], "e", lazy.shutdown(), desc="Exit qtile"),
     Key([mod], "q", lazy.window.kill(), desc="Close window"),
-    Key([mod], "Escape", lazy.spawn("i3lock -c 000000"), desc="Lock the screen"),
+    Key([mod], "Escape", lazy.spawn(f"i3lock -c {c['base'][1:]}"), desc="Lock the screen"),
 
     Key([mod], "Return", lazy.spawn(terminal), desc="Terminal"),
     Key([mod], "t", lazy.spawn(terminal), desc="Terminal: kitty"),
     Key([mod], "e", lazy.spawn("thunar"), desc="File manager: thunar"),
-    Key([mod], "d", lazy.spawn("rofi -show drun"), desc="Run an application: rofi"),
-    Key([mod], "y", lazy.spawn("copyq toggle"), desc="Clipboard history"),
-    Key([mod], "period", lazy.spawn("rofi -show emoji -modi emoji"), desc="Emoji picker"),
-    Key([mod], "comma", lazy.spawn("rofi -show calc -modi calc -no-show-match -no-sort"), desc="Calculator"),
+    Key([mod], "d", lazy.spawn(rofi("launcher", "rofi -show drun")), desc="Run an application: rofi"),
+    Key([mod], "y", lazy.spawn(rofi("clipboard", "copyq toggle")), desc="Clipboard history"),
+    Key([mod], "period", lazy.spawn(rofi("emoji", "rofi -show emoji -modi emoji")), desc="Emoji picker"),
+    Key([mod], "comma", lazy.spawn(rofi("calc", "rofi -show calc -modi calc -no-show-match -no-sort")), desc="Calculator"),
     Key([mod], "n", lazy.spawn("dunstctl history-pop"), desc="Show the last notification again"),
     Key([mod], "w", lazy.spawn("dunstctl close-all"), desc="Dismiss notifications"),
     Key([], "F12", lazy.group["scratchpad"].dropdown_toggle("quake"), desc="Drop-down terminal"),
@@ -54,7 +76,7 @@ keys = [
 
     Key([mod], "Tab", lazy.screen.toggle_group(), desc="Previous workspace"),
     Key([mod, "shift"], "Tab", lazy.group.focus_back(), desc="Last focused window"),
-    Key([mod], "o", lazy.spawn("rofi -show window"), desc="Window list (niri: overview)"),
+    Key([mod], "o", lazy.spawn(rofi("window", "rofi -show window")), desc="Window list (niri: overview)"),
     Key([mod], "space", lazy.widget["keyboardlayout"].next_keyboard(), desc="Switch keyboard layout"),
 
     Key([mod], "h", lazy.layout.left(), desc="Focus left"),
@@ -150,9 +172,10 @@ keys += keys_both([mod, "shift"], ["minus", "ssharp"],
                   lazy.spawn(f"sh -c 'rofi -dmenu -i -p Keys < {cheatsheet}'"), "Show keybindings")
 
 layouts = [
-    layout.Columns(border_focus="#5e81ac", border_normal="#2e3440", border_width=2,
-                   margin=4, insert_position=1, num_columns=4, split=False),
-    layout.Max(),
+    # Cozytile: gaps, no X border (picom rounds the corners and dims what lacks focus)
+    layout.Columns(border_width=0, margin=9, border_on_single=True, insert_position=1,
+                   num_columns=4, split=False),
+    layout.Max(border_width=0, margin=9),
 ]
 
 floating_layout = layout.Floating(float_rules=[
@@ -165,24 +188,68 @@ mouse = [
     Click([mod], "Button2", lazy.window.bring_to_front()),
 ]
 
-widget_defaults = dict(font="Noto Sans", fontsize=13, padding=4)
+widget_defaults = dict(font="JetBrainsMono Nerd Font Bold", fontsize=13, padding=4,
+                       foreground=c["text"], background=c["mantle"])
+
+
+def pill(*widgets):
+    """Cozytile's rounded segment: half-circle glyphs around widgets on surface0."""
+    cap = dict(foreground=c["surface0"], background=c["mantle"], padding=0, fontsize=26)
+    for w in widgets:
+        w.background = c["surface0"]
+    return [widget.TextBox("\ue0b6", **cap), *widgets, widget.TextBox("\ue0b4", **cap),
+            widget.Spacer(length=8)]
+
+
+def icon(glyph, color):
+    return widget.TextBox(glyph, foreground=color, fontsize=15, padding=6)
+
+
 screens = [Screen(top=bar.Bar([
-    widget.GroupBox(visible_groups=workspaces, highlight_method="line"),
-    widget.CurrentLayout(),
-    widget.WindowName(),
-    widget.KeyboardLayout(configured_keyboards=["de", "us"]),
-    widget.Systray(),
-    widget.Clock(format="%a %d.%m. %H:%M"),
-], 26))]
+    widget.Spacer(length=10),
+    *pill(widget.TextBox("\U000f08c7", foreground=c["mauve"], fontsize=18, padding=8,
+                         mouse_callbacks={"Button1": lazy.spawn(rofi("powermenu", "true"))})),
+    *pill(widget.GroupBox(visible_groups=workspaces, highlight_method="text",
+                          active=c["lavender"], inactive=c["overlay0"], this_current_screen_border=c["mauve"],
+                          urgent_text=c["red"], disable_drag=True, padding=6, fontsize=14)),
+    *pill(widget.CurrentLayout(foreground=c["blue"], padding=8)),
+    *pill(icon("\uf002", c["mauve"]),
+          widget.TextBox("Search", foreground=c["text"],
+                         mouse_callbacks={"Button1": lazy.spawn(rofi("launcher", "rofi -show drun"))})),
+    widget.WindowName(foreground=c["subtext0"], max_chars=80, empty_group_string="Desktop", padding=10),
+    widget.Systray(padding=6),
+    widget.Spacer(length=8),
+    *pill(icon("\uf2db", c["peach"]), widget.Memory(format="{MemUsed:.0f}{mm}", update_interval=5)),
+    *pill(icon("\U000f057e", c["green"]),
+          widget.GenPollCommand(cmd="wpctl get-volume @DEFAULT_AUDIO_SINK@ | awk '{print int($2*100)\"%\" ($3?\" M\":\"\")}'",
+                                shell=True, update_interval=2)),
+    *pill(widget.KeyboardLayout(configured_keyboards=["de", "us"], foreground=c["sky"], padding=8)),
+    *pill(icon("\uf017", c["pink"]), widget.Clock(format="%a %d.%m.  %H:%M")),
+    widget.Spacer(length=2),
+], 32, margin=[8, 12, 0, 12], background=c["mantle"]))]
+
+
+def rotate_wallpaper():
+    images = [p for p in glob.glob(os.path.join(WALLPAPER_DIR, "**", "*"), recursive=True)
+              if p.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))]
+    if images and shutil.which("feh"):
+        qtile.spawn(["feh", "--no-fehbg", "--bg-fill", random.choice(images)])
+    qtile.call_later(WALLPAPER_INTERVAL, rotate_wallpaper)
+
+
+@hook.subscribe.startup_complete
+def start_wallpapers():
+    rotate_wallpaper()
 
 
 @hook.subscribe.startup_once
 def autostart():
     # tray apps MATE would start through XDG autostart
-    for cmd in (["copyq", "--start-server"],):
+    # dunst explicitly: mate-notification-daemon (MATE is installed too) could win
+    # the D-Bus activation otherwise
+    for cmd in (["copyq", "--start-server"], ["picom", "-b"], ["dunst"]):
         if shutil.which(cmd[0]):
             qtile.spawn(cmd)
-    # dunst is D-Bus activated on the first notification
 
 
 follow_mouse_focus = False

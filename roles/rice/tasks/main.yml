@@ -1,0 +1,118 @@
+---
+- name: Rice packages
+  community.general.pacman:
+    name: "{{ rice_packages }}"
+
+- name: Dotfiles (rofi themes, kitty, zathura, Thunar, dunst, picom, GTK/Qt)
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: /home/{{ user }}/{{ item.dest }}
+    owner: "{{ user }}"
+    group: "{{ user }}"
+    mode: "0644"
+    directory_mode: "0755"
+  loop: "{{ rice_dotfiles }}"
+  loop_control:
+    label: "{{ item.dest }}"
+
+- name: Ted's rofi scripts
+  ansible.builtin.copy:
+    src: rofi/bin/
+    dest: /home/{{ user }}/.config/rofi/bin/
+    owner: "{{ user }}"
+    group: "{{ user }}"
+    mode: "0755"
+    directory_mode: "0755"
+
+# lazy.nvim rewrites lazy-lock.json on every :Lazy update, so it is only
+# seeded; everything else in the nvim config stays managed.
+- name: Neovim config
+  ansible.builtin.copy:
+    src: dotfiles/nvim/
+    dest: /home/{{ user }}/.config/nvim/
+    owner: "{{ user }}"
+    group: "{{ user }}"
+    mode: "0644"
+    directory_mode: "0755"
+
+- name: Neovim plugin lock file (seeded once)
+  ansible.builtin.copy:
+    src: dotfiles/nvim-seed/lazy-lock.json
+    dest: /home/{{ user }}/.config/nvim/lazy-lock.json
+    owner: "{{ user }}"
+    group: "{{ user }}"
+    mode: "0644"
+    force: false
+
+- name: Workspaces obsidian.nvim and neorg expect
+  ansible.builtin.file:
+    path: /home/{{ user }}/Documents/{{ item }}
+    state: directory
+    owner: "{{ user }}"
+    group: "{{ user }}"
+    mode: "0755"
+  loop: [Obsidian, Neorg]
+
+- name: Catppuccin Mocha GTK theme (from the FreeBSD dotfiles)
+  ansible.builtin.copy:
+    src: themes/catppuccin-mocha-blue-compact+rimless,normal
+    dest: /usr/share/themes/
+    owner: root
+    group: root
+    mode: u=rwX,g=rX,o=rX
+    directory_mode: "0755"
+
+- name: Colloid icon download dir
+  ansible.builtin.file:
+    path: /var/cache/colloid
+    state: directory
+    mode: "0755"
+
+- name: Download Colloid icons {{ colloid_version }}
+  ansible.builtin.get_url:
+    url: https://github.com/vinceliuice/Colloid-icon-theme/archive/refs/tags/{{ colloid_version }}.tar.gz
+    dest: /var/cache/colloid/{{ colloid_version }}.tar.gz
+    checksum: sha256:{{ colloid_sha256 }}
+    mode: "0644"
+  register: colloid
+
+- name: Install Colloid-Catppuccin icons system-wide
+  ansible.builtin.shell: |
+    set -e
+    umask 022
+    d=$(mktemp -d)
+    tar -xzf {{ colloid.dest }} -C "$d" --strip-components=1
+    bash "$d"/install.sh -d /usr/share/icons -s catppuccin -t default
+    rm -rf "$d"
+  args:
+    creates: /usr/share/icons/Colloid-Catppuccin-Dark
+
+# libadwaita ignores settings.ini and asks GSettings for the colour scheme
+- name: Dark colour scheme for libadwaita apps
+  ansible.builtin.copy:
+    content: |
+      [org.gnome.desktop.interface]
+      color-scheme='prefer-dark'
+    dest: /usr/share/glib-2.0/schemas/91_rice.gschema.override
+    mode: "0644"
+  notify: Compile gschemas (rice)
+
+- name: Wallpapers (rotated by qtile every 15 minutes)
+  when: wallpapers_src | default('') | length > 0
+  block:
+    - name: Wallpaper dir
+      ansible.builtin.file:
+        path: /home/{{ user }}/.local/share/wallpapers
+        state: directory
+        owner: "{{ user }}"
+        group: "{{ user }}"
+        mode: "0755"
+
+    - name: Copy the wallpapers
+      ansible.builtin.copy:
+        src: "{{ wallpapers_src | regex_replace('/?$', '/') }}"
+        dest: /home/{{ user }}/.local/share/wallpapers/
+        owner: "{{ user }}"
+        group: "{{ user }}"
+        mode: "0644"
+        directory_mode: "0755"

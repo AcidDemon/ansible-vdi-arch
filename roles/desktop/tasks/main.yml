@@ -108,6 +108,9 @@
           #!/bin/sh
           # Managed by Ansible
           setxkbmap {{ x11_layout }}
+          # Qt apps follow qt6ct/Kvantum (rice role); the cursor as on the FreeBSD box
+          [ -x /usr/bin/qt6ct ] && export QT_QPA_PLATFORMTHEME=qt6ct
+          export XCURSOR_THEME=capitaine-cursors-light XCURSOR_SIZE=36
           if [ -n "$XRDP_SESSION" ] && [ -x /usr/lib/pipewire-module-xrdp/load_pw_modules.sh ]; then
             /usr/lib/pipewire-module-xrdp/load_pw_modules.sh &
           fi

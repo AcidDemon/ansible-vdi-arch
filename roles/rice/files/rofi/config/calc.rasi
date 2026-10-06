@@ -1,0 +1,23 @@
+@import "launcher.rasi"
+
+configuration {
+    show-icons:                     false;
+    display-calc:                   "";
+}
+
+textbox-prompt-colon {
+    str:                            "";
+}
+
+entry {
+    placeholder:                    "Calculate...";
+}
+
+element-icon {
+    size:                           0px;
+}
+
+listview {
+    columns:                        1;
+    lines:                          5;
+}

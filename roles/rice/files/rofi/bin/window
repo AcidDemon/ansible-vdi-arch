@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+rofi \
+	-show window \
+	-modi window \
+	-show-icons \
+	-scroll-method 0 \
+	-display-window "" \
+	-terminal kitty \
+	-kb-cancel Escape \
+	-theme "$HOME"/.config/rofi/config/window.rasi
