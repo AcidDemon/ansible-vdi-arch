@@ -1,20 +1,21 @@
 # Managed by Ansible: system default qtile config for the VDI. A user's own
 # ~/.config/qtile/config.py takes over when present.
 #
-# Mirrors the niri binds on Ted (nixfiles modules/desktop/niri/binds.nix) as far
-# as an X11 tiling WM can: niri's scrolling columns map to qtile's Columns layout,
-# niri-quake to a ScratchPad drop-down, swaync to dunst, cliphist to CopyQ.
-# Left out: overview, monitor power-off, brightness keys (no monitor on a VPS).
-#
-# Look: Cozytile's floating bar of rounded segments, in Catppuccin Mocha. Rounded
-# window corners come from picom; rofi/dunst/kitty themes come from the rice role.
+# Bar, layouts and look: Cozytile by Darkkal44 (Rices/Qtile/Cozytile), unchanged
+# except its colours, moved to the nearest Catppuccin Mocha shade:
+#   #282738 -> base #1e1e2e, #353446 -> surface0 #313244, #CAA9E0 -> mauve #cba6f7,
+#   #91B1F0 -> blue #89b4fa, #4B427E -> overlay0 #6c7086, icon pinks -> pink #f5c2e7
+# (the PNG assets were recoloured the same way). pywal is not used.
+# Keys: the niri binds on Ted (nixfiles modules/desktop/niri/binds.nix).
+# Window outline: niri's border (2px, mauve -> blue gradient, inactive surface0);
+# X11 can't draw a gradient, so it is two 1px rings, mauve outside, blue inside.
 import glob
 import os
 import random
 import shutil
 
 from libqtile import bar, hook, layout, qtile, widget
-from libqtile.config import Click, Drag, DropDown, Group, Key, Screen, ScratchPad
+from libqtile.config import Click, Drag, DropDown, Group, Key, Match, Screen, ScratchPad
 from libqtile.lazy import lazy
 from libqtile.scratchpad import ScratchPad as ScratchPadGroup
 
@@ -22,21 +23,18 @@ mod = "mod4"
 terminal = "kitty"
 volume = "wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@"
 workspaces = ["main", "pim", "chat", "scratch", "music"]
+ASSETS = os.path.join(os.path.dirname(os.path.realpath(__file__)), "Assets")
 
-# Catppuccin Mocha
-c = dict(base="#1e1e2e", mantle="#181825", crust="#11111b", surface0="#313244",
-         surface1="#45475a", overlay0="#6c7086", text="#cdd6f4", subtext0="#a6adc8",
-         lavender="#b4befe", blue="#89b4fa", mauve="#cba6f7", pink="#f5c2e7",
-         red="#f38ba8", peach="#fab387", green="#a6e3a1", sky="#89dceb")
 
-# Ted's rofi scripts when the rice role installed them, plain rofi otherwise
 def rofi(script, fallback):
+    """Ted's rofi scripts when the rice role installed them, plain rofi otherwise."""
     path = os.path.expanduser(f"~/.config/rofi/bin/{script}")
     return path if os.access(path, os.X_OK) else fallback
 
+
 # Wallpapers rotate like awww-random on the FreeBSD box (rotate.conf): a random
-# image from this dir every 15 minutes. feh draws them; gdk-pixbuf would load
-# them through glycin, which hangs here (see mate-screenshot).
+# image from this dir every 15 minutes, drawn by feh (gdk-pixbuf would go through
+# glycin, which hangs here). Stands in for Cozytile's `wal -i`.
 WALLPAPER_DIR = os.path.expanduser("~/.local/share/wallpapers")
 WALLPAPER_INTERVAL = 900
 
@@ -60,7 +58,7 @@ def keys_both(mods, names, cmd, desc=""):
 keys = [
     Key([mod, "shift"], "e", lazy.shutdown(), desc="Exit qtile"),
     Key([mod], "q", lazy.window.kill(), desc="Close window"),
-    Key([mod], "Escape", lazy.spawn(f"i3lock -c {c['base'][1:]}"), desc="Lock the screen"),
+    Key([mod], "Escape", lazy.spawn("i3lock -c 1e1e2e"), desc="Lock the screen"),
 
     Key([mod], "Return", lazy.spawn(terminal), desc="Terminal"),
     Key([mod], "t", lazy.spawn(terminal), desc="Terminal: kitty"),
@@ -146,7 +144,8 @@ keys = [
     Key([], "XF86AudioNext", lazy.spawn("playerctl next")),
 ]
 
-groups = [Group(name, label=f"{i} {name}") for i, name in enumerate(workspaces, 1)]
+# Cozytile shows each workspace as a dot; the names stay for the niri keys
+groups = [Group(name, label="\uea71") for name in workspaces]
 for i, name in enumerate(workspaces, 1):
     keys += [
         Key([mod], str(i), lazy.group[name].toscreen(), desc=f"Workspace {name}"),
@@ -171,62 +170,240 @@ with open(cheatsheet, "w") as f:
 keys += keys_both([mod, "shift"], ["minus", "ssharp"],
                   lazy.spawn(f"sh -c 'rofi -dmenu -i -p Keys < {cheatsheet}'"), "Show keybindings")
 
+# L A Y O U T S  (Cozytile; Columns first so the niri column keys apply)
+lay_config = {
+    "border_width": 2,
+    "margin": 9,
+    "border_focus": ["#cba6f7", "#89b4fa"],
+    "border_normal": "#313244",
+    "font": "FiraCode Nerd Font",
+    "grow_amount": 2,
+}
+
 layouts = [
-    # Cozytile: gaps, no X border (picom rounds the corners and dims what lacks focus)
-    layout.Columns(border_width=0, margin=9, border_on_single=True, insert_position=1,
-                   num_columns=4, split=False),
-    layout.Max(border_width=0, margin=9),
+    # split=False draws the *_stack colours, which default to dark red
+    layout.Columns(**lay_config, border_on_single=True, num_columns=2, split=False,
+                   border_focus_stack=lay_config["border_focus"],
+                   border_normal_stack=lay_config["border_normal"]),
+    layout.Bsp(**lay_config, fair=False, border_on_single=True),
+    layout.Floating(**lay_config),
+    layout.Max(**lay_config),
 ]
 
-floating_layout = layout.Floating(float_rules=[
-    *layout.Floating.default_float_rules,
-])
+widget_defaults = dict(
+    font="sans",
+    fontsize=12,
+    padding=3,
+)
+extension_defaults = [widget_defaults.copy()]
 
+
+def search():
+    qtile.spawn(rofi("launcher", "rofi -show drun"))
+
+
+def power():
+    qtile.spawn(rofi("powermenu", "true"))
+
+
+# █▄▄ ▄▀█ █▀█
+# █▄█ █▀█ █▀▄
+
+screens = [
+    Screen(
+        top=bar.Bar(
+            [
+                widget.Spacer(
+                    length=15,
+                    background="#1e1e2e",
+                ),
+                widget.Image(
+                    filename=f"{ASSETS}/launch_Icon.png",
+                    margin=2,
+                    background="#1e1e2e",
+                    mouse_callbacks={"Button1": power},
+                ),
+                widget.Image(
+                    filename=f"{ASSETS}/6.png",
+                ),
+                widget.GroupBox(
+                    font="JetBrainsMono Nerd Font",
+                    fontsize=24,
+                    borderwidth=3,
+                    highlight_method="block",
+                    active="#cba6f7",
+                    block_highlight_text_color="#89b4fa",
+                    highlight_color="#313244",
+                    inactive="#1e1e2e",
+                    foreground="#6c7086",
+                    background="#313244",
+                    this_current_screen_border="#313244",
+                    this_screen_border="#313244",
+                    other_current_screen_border="#313244",
+                    other_screen_border="#313244",
+                    urgent_border="#313244",
+                    rounded=True,
+                    disable_drag=True,
+                    visible_groups=workspaces,
+                ),
+                widget.Spacer(
+                    length=8,
+                    background="#313244",
+                ),
+                widget.Image(
+                    filename=f"{ASSETS}/1.png",
+                ),
+                widget.CurrentLayout(
+                    mode="icon",
+                    custom_icon_paths=[f"{ASSETS}/layout"],
+                    background="#313244",
+                    scale=0.50,
+                ),
+                widget.Image(
+                    filename=f"{ASSETS}/5.png",
+                ),
+                widget.TextBox(
+                    text="\uf002 ",
+                    font="Font Awesome 7 Free Solid",
+                    fontsize=13,
+                    background="#1e1e2e",
+                    foreground="#cba6f7",
+                    mouse_callbacks={"Button1": search},
+                ),
+                widget.TextBox(
+                    fmt="Search",
+                    background="#1e1e2e",
+                    font="JetBrainsMono Nerd Font Bold",
+                    fontsize=13,
+                    foreground="#cba6f7",
+                    mouse_callbacks={"Button1": search},
+                ),
+                widget.Image(
+                    filename=f"{ASSETS}/4.png",
+                ),
+                widget.WindowName(
+                    background="#313244",
+                    font="JetBrainsMono Nerd Font Bold",
+                    fontsize=13,
+                    empty_group_string="Desktop",
+                    max_chars=130,
+                    foreground="#cba6f7",
+                ),
+                widget.Image(
+                    filename=f"{ASSETS}/3.png",
+                ),
+                widget.Systray(
+                    background="#1e1e2e",
+                    fontsize=2,
+                ),
+                widget.TextBox(
+                    text=" ",
+                    background="#1e1e2e",
+                ),
+                widget.Image(
+                    filename=f"{ASSETS}/6.png",
+                    background="#313244",
+                ),
+                widget.TextBox(
+                    text="\uf1fe",
+                    font="Font Awesome 7 Free Solid",
+                    fontsize=13,
+                    background="#313244",
+                    foreground="#cba6f7",
+                ),
+                widget.Memory(
+                    background="#313244",
+                    format="{MemUsed: .0f}{mm}",
+                    foreground="#cba6f7",
+                    font="JetBrainsMono Nerd Font Bold",
+                    fontsize=13,
+                    update_interval=5,
+                ),
+                # Cozytile's battery segment dropped: a VPS has no battery
+                widget.Image(
+                    filename=f"{ASSETS}/2.png",
+                ),
+                widget.Spacer(
+                    length=8,
+                    background="#313244",
+                ),
+                widget.TextBox(
+                    text="\uf027 ",
+                    font="Font Awesome 7 Free Solid",
+                    fontsize=13,
+                    background="#313244",
+                    foreground="#cba6f7",
+                ),
+                widget.Volume(
+                    font="JetBrainsMono Nerd Font Bold",
+                    fontsize=13,
+                    background="#313244",
+                    foreground="#cba6f7",
+                    mute_command="pamixer --toggle-mute",
+                    volume_up_command="pamixer -i 5",
+                    volume_down_command="pamixer -d 5",
+                    get_volume_command="pamixer --get-volume-human",
+                    update_interval=0.2,
+                    unmute_format="{volume}%",
+                    mute_format="M",
+                ),
+                widget.Image(
+                    filename=f"{ASSETS}/5.png",
+                    background="#313244",
+                ),
+                widget.TextBox(
+                    text="\uf017 ",
+                    font="Font Awesome 7 Free Solid",
+                    fontsize=13,
+                    background="#1e1e2e",
+                    foreground="#cba6f7",
+                ),
+                widget.Clock(
+                    format="%I:%M %p",
+                    background="#1e1e2e",
+                    foreground="#cba6f7",
+                    font="JetBrainsMono Nerd Font Bold",
+                    fontsize=13,
+                ),
+                widget.Spacer(
+                    length=18,
+                    background="#1e1e2e",
+                ),
+            ],
+            30,
+            border_color="#1e1e2e",
+            border_width=[0, 0, 0, 0],
+            margin=[15, 60, 6, 60],
+        ),
+    ),
+]
+
+# Drag floating layouts.
 mouse = [
     Drag([mod], "Button1", lazy.window.set_position_floating(), start=lazy.window.get_position()),
     Drag([mod], "Button3", lazy.window.set_size_floating(), start=lazy.window.get_size()),
     Click([mod], "Button2", lazy.window.bring_to_front()),
 ]
 
-widget_defaults = dict(font="JetBrainsMono Nerd Font Bold", fontsize=13, padding=4,
-                       foreground=c["text"], background=c["mantle"])
-
-
-def pill(*widgets):
-    """Cozytile's rounded segment: half-circle glyphs around widgets on surface0."""
-    cap = dict(foreground=c["surface0"], background=c["mantle"], padding=0, fontsize=26)
-    for w in widgets:
-        w.background = c["surface0"]
-    return [widget.TextBox("\ue0b6", **cap), *widgets, widget.TextBox("\ue0b4", **cap),
-            widget.Spacer(length=8)]
-
-
-def icon(glyph, color):
-    return widget.TextBox(glyph, foreground=color, fontsize=15, padding=6)
-
-
-screens = [Screen(top=bar.Bar([
-    widget.Spacer(length=10),
-    *pill(widget.TextBox("\U000f08c7", foreground=c["mauve"], fontsize=18, padding=8,
-                         mouse_callbacks={"Button1": lazy.spawn(rofi("powermenu", "true"))})),
-    *pill(widget.GroupBox(visible_groups=workspaces, highlight_method="text",
-                          active=c["lavender"], inactive=c["overlay0"], this_current_screen_border=c["mauve"],
-                          urgent_text=c["red"], disable_drag=True, padding=6, fontsize=14)),
-    *pill(widget.CurrentLayout(foreground=c["blue"], padding=8)),
-    *pill(icon("\uf002", c["mauve"]),
-          widget.TextBox("Search", foreground=c["text"],
-                         mouse_callbacks={"Button1": lazy.spawn(rofi("launcher", "rofi -show drun"))})),
-    widget.WindowName(foreground=c["subtext0"], max_chars=80, empty_group_string="Desktop", padding=10),
-    widget.Systray(padding=6),
-    widget.Spacer(length=8),
-    *pill(icon("\uf2db", c["peach"]), widget.Memory(format="{MemUsed:.0f}{mm}", update_interval=5)),
-    *pill(icon("\U000f057e", c["green"]),
-          widget.GenPollCommand(cmd="wpctl get-volume @DEFAULT_AUDIO_SINK@ | awk '{print int($2*100)\"%\" ($3?\" M\":\"\")}'",
-                                shell=True, update_interval=2)),
-    *pill(widget.KeyboardLayout(configured_keyboards=["de", "us"], foreground=c["sky"], padding=8)),
-    *pill(icon("\uf017", c["pink"]), widget.Clock(format="%a %d.%m.  %H:%M")),
-    widget.Spacer(length=2),
-], 32, margin=[8, 12, 0, 12], background=c["mantle"]))]
+dgroups_key_binder = None
+dgroups_app_rules = []  # type: list
+follow_mouse_focus = True
+bring_front_click = False
+cursor_warp = False
+floating_layout = layout.Floating(
+    border_focus="#181825",
+    border_normal="#181825",
+    border_width=0,
+    float_rules=[
+        *layout.Floating.default_float_rules,
+        Match(wm_class="confirmreset"),  # gitk
+        Match(wm_class="makebranch"),  # gitk
+        Match(wm_class="maketag"),  # gitk
+        Match(wm_class="ssh-askpass"),  # ssh-askpass
+        Match(title="branchdialog"),  # gitk
+        Match(title="pinentry"),  # GPG key password entry
+    ],
+)
 
 
 def rotate_wallpaper():
@@ -244,17 +421,16 @@ def start_wallpapers():
 
 @hook.subscribe.startup_once
 def autostart():
-    # tray apps MATE would start through XDG autostart
-    # dunst explicitly: mate-notification-daemon (MATE is installed too) could win
-    # the D-Bus activation otherwise
-    for cmd in (["copyq", "--start-server"], ["picom", "-b"], ["dunst"]):
+    # Cozytile's autostart_once.sh starts wal + picom; here picom, dunst (explicitly,
+    # so MATE's notification daemon can't take the bus) and CopyQ for the clipboard
+    for cmd in (["picom", "-b"], ["dunst"], ["copyq", "--start-server"]):
         if shutil.which(cmd[0]):
             qtile.spawn(cmd)
 
 
-follow_mouse_focus = False
-bring_front_click = True
-cursor_warp = False
 auto_fullscreen = True
 focus_on_window_activation = "smart"
-wmname = "LG3D"   # some Java apps only draw correctly with this name
+reconfigure_screens = True
+auto_minimize = True
+wl_input_rules = None
+wmname = "LG3D"

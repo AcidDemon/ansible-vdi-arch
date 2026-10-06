@@ -10,5 +10,5 @@ desktop_sessions:
     command: /usr/bin/startplasma-x11
   qtile:                           # tiling, keys mirror niri on Ted (roles/desktop/files/qtile)
     packages: [qtile, python-psutil, kitty, thunar, rofi, rofi-emoji, rofi-calc, dunst, playerctl, i3lock,
-               xorg-setxkbmap, picom, feh, ttf-jetbrains-mono-nerd]
+               xorg-setxkbmap, picom, feh, ttf-jetbrains-mono-nerd, pamixer]   # pamixer: Cozytile volume widget
     command: /usr/local/bin/vdi-qtile-session

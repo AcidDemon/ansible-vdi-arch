@@ -87,17 +87,12 @@
 - name: Qtile
   when: "'qtile' in [desktop, xrdp_desktop]"
   block:
-    - name: Qtile system config dir
-      ansible.builtin.file:
-        path: /etc/xdg/qtile
-        state: directory
-        mode: "0755"
-
-    - name: Qtile system default config (keys mirror niri on Ted)
+    - name: Qtile system default config (keys mirror niri on Ted) and the bar's Assets
       ansible.builtin.copy:
-        src: qtile/config.py
-        dest: /etc/xdg/qtile/config.py
+        src: qtile/
+        dest: /etc/xdg/qtile/
         mode: "0644"
+        directory_mode: "0755"
 
     # qtile has no settings daemon and no XDG autostart: the wrapper sets the
     # keyboard layout, loads xrdp's pipewire audio module in RDP sessions, and
